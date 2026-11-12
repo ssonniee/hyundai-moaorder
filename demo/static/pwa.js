@@ -47,7 +47,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 }
 // Mobile background execution can stop the microphone. End and save explicitly.
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && typeof phase !== 'undefined' && phase === 'recording') {
+  if (document.hidden && typeof phase !== 'undefined' && ['recording', 'paused'].includes(phase)) {
     toast('화면을 벗어나 녹음을 마쳤어요. 저장 상태를 확인해 주세요.');
     stopRecording();
   }

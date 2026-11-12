@@ -10,10 +10,12 @@ from pathlib import Path
 import re
 import secrets
 import signal
+import shutil
 import ssl
 import sys
 import time
 import uuid
+import wave
 
 from aiohttp import web
 
@@ -24,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / 'demo/static'
 MAX_CHUNK = 8 * 1024 * 1024
 MAX_SESSION = 250 * 1024 * 1024
-MIME = {'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/wav': 'wav'}
+MIME = {'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/wav': 'wav', 'audio/mpeg': 'mp3', 'audio/flac': 'flac'}
 
 
 class Demo:
@@ -51,7 +53,7 @@ class Demo:
             self.locks[state['id']] = asyncio.Lock()
 
     def get(self, id):
-        if not re.fullmatch('[a-f0-9]{32}', id) or id not in self.sessions:
+        if not re.fullmatch('[a-f0-9]{32}', id) or id not in self.sessions or self.sessions[id]['status'] == 'deleted':
             raise web.HTTPNotFound(text='녹음을 찾을 수 없습니다.')
         return self.sessions[id]
 
@@ -63,6 +65,7 @@ class Demo:
         return web.json_response({'ready': all((ROOT/'models'/m/'config.json').exists() for m in
             ['whisper-large-v3-turbo', 'Qwen3-4B-Instruct-2507']),
             'max_minutes': 60, 'max_chunk_bytes': MAX_CHUNK,
+            'max_upload_bytes': MAX_SESSION, 'upload_formats': list(MIME), 'append_orders': True,
             'processing': {'location': 'server', 'device': self.device, 'asr': self.asr, 'separator': self.separator},
             'stores': list(self.stores.values()),
             'tile_url': os.environ.get('DRIVE_ORDER_TILES', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
@@ -82,8 +85,40 @@ class Demo:
         # The browser builds the URL so SSH-forwarded ports are preserved.
         return web.json_response({'key': self.access_key})
 
+    def order_id(self, state):
+        return state.get('order_id', state['id'])
+
+    def order_members(self, state):
+        return [s for s in self.sessions.values() if self.order_id(s) == self.order_id(state)
+                and s['status'] not in ('deleted', 'cancelled')]
+
+    def order_lock(self, state):
+        return self.locks[self.order_id(state)]
+
+    def latest_order(self, state):
+        complete = [s for s in self.order_members(state) if s['status'] == 'complete']
+        return max(complete, key=lambda s: s.get('revision', 1)) if complete else None
+
     async def create(self, request):
         body = await request.json()
+        if body.get('parent_id') is None:
+            return self.create_state(body)
+        parent = self.get(body['parent_id'])
+        async with self.order_lock(parent):
+            latest = self.latest_order(parent)
+            if parent['status'] != 'complete' or latest is not parent:
+                raise web.HTTPConflict(text='가장 최근에 정리된 주문에서 추가 주문을 시작해 주세요.')
+            if any(s['status'] != 'complete' for s in self.order_members(parent)):
+                raise web.HTTPConflict(text='이미 추가 중인 녹음이 있어요. 이어서 분석하거나 삭제해 주세요.')
+            if parent.get('revision', 1) >= 100:
+                raise ValueError('한 주문에는 녹음을 최대 100개까지 추가할 수 있습니다.')
+            return self.create_state(body, parent)
+
+    def create_state(self, body, parent=None):
+        if parent:
+            # Inherit the saved menu snapshot, even if the live catalogue has changed.
+            body = {**body, 'catalog_store_id': None, 'destination': parent['destination'],
+                    'menu': parent['menu']['items']}
         catalog_id = body.get('catalog_store_id')
         store = None
         if catalog_id is not None:
@@ -120,9 +155,19 @@ class Demo:
             destination['address'] = store['address']
         trip = {'session_id': id, 'destination': destination}
         validate_trip(trip, menu)
+        if parent:
+            destination, menu = copy.deepcopy(parent['destination']), copy.deepcopy(parent['menu'])
+            trip = {'session_id': id, 'destination': destination}
+            catalog_id = parent.get('catalog_store_id')
         mime = str(body.get('mime', '')).split(';')[0]
         if mime not in MIME:
             raise ValueError('지원하지 않는 녹음 형식입니다.')
+        source = body.get('source', 'microphone')
+        expected_bytes = body.get('expected_bytes')
+        if source not in ('microphone', 'upload'):
+            raise ValueError('잘못된 음성 입력 방식입니다.')
+        if source == 'upload' and (type(expected_bytes) is not int or not 0 < expected_bytes <= MAX_SESSION):
+            raise ValueError('업로드 파일은 250MB 이하의 빈 파일이 아닌 음성이어야 합니다.')
         folder = self.data / id
         folder.mkdir()
         (folder/'chunks').mkdir()
@@ -131,7 +176,9 @@ class Demo:
         state = {'id': id, 'destination': destination, 'menu': menu, 'mime': mime,
                  'status': 'recording', 'phase': '대화를 녹음하고 있습니다', 'created_at': time.time(),
                  'next_chunk': 0, 'bytes': 0, 'duration': 0, 'attempt': 0, 'speaker_names': {},
-                 'catalog_store_id': catalog_id}
+                 'catalog_store_id': catalog_id, 'source': source, 'expected_bytes': expected_bytes if source == 'upload' else None}
+        state.update(order_id=self.order_id(parent) if parent else id,
+                     parent_id=parent['id'] if parent else None, revision=parent.get('revision', 1)+1 if parent else 1)
         self.sessions[id], self.locks[id] = state, asyncio.Lock()
         self.save(state)
         return web.json_response(state, status=201)
@@ -147,7 +194,7 @@ class Demo:
         audio = await request.read()
         if not audio or len(audio) > MAX_CHUNK:
             raise ValueError('녹음 조각 크기를 확인해 주세요.')
-        async with self.locks[state['id']]:
+        async with self.order_lock(state):
             path = self.data/state['id']/'chunks'/f'{index:06d}.chunk'
             if state['status'] != 'recording':
                 raise web.HTTPConflict(text='종료된 녹음입니다.')
@@ -170,13 +217,15 @@ class Demo:
     async def finish(self, request):
         state = self.get(request.match_info['id'])
         body = await request.json()
-        async with self.locks[state['id']]:
+        async with self.order_lock(state):
             if state['status'] in ('queued', 'processing', 'complete'):
                 return web.json_response(state)
             if state['status'] not in ('recording', 'failed'):
                 raise web.HTTPConflict(text='분석할 수 없는 녹음 상태입니다.')
             if type(body.get('chunks')) is not int or body['chunks'] != state['next_chunk'] or not state['bytes']:
                 raise web.HTTPConflict(text='음성 업로드가 아직 완료되지 않았습니다.')
+            if state.get('source') == 'upload' and state['bytes'] != state['expected_bytes']:
+                raise web.HTTPConflict(text='파일 업로드가 아직 완료되지 않았습니다. 파일 전체를 전송해 주세요.')
             duration = body.get('duration', state['duration'])
             if type(duration) not in (float, int) or not math.isfinite(duration) or not 0 <= duration <= 3620:
                 raise ValueError('녹음 길이를 확인해 주세요. 최대 60분입니다.')
@@ -203,6 +252,11 @@ class Demo:
                         for index in range(state['next_chunk']):
                             target.write((folder/'chunks'/f'{index:06d}.chunk').read_bytes())
                 await asyncio.to_thread(assemble)
+                if state.get('source') == 'upload':
+                    state['duration'] = await self.validate_upload(recording)
+                    self.save(state)
+                if state.get('parent_id'):
+                    recording = await self.combine_recordings(state, recording)
                 await asyncio.wait_for(self.runner(state, recording, output), timeout=7200)
                 if not (output/'orders.json').is_file():
                     raise RuntimeError('주문 결과 파일이 만들어지지 않았습니다.')
@@ -210,10 +264,98 @@ class Demo:
             except asyncio.CancelledError:
                 state.update(status='failed', phase='서버가 중지되었습니다. 다시 분석해 주세요.')
                 raise
+            except ValueError as exc:
+                state.update(status='failed', phase=str(exc)[:200])
             except Exception as exc:
                 state.update(status='failed', phase='분석에 실패했습니다. 저장된 음성으로 다시 시도할 수 있습니다.', error=str(exc)[:500])
             finally:
                 self.save(state)
+
+    def analysis_audio(self, state):
+        return self.data/state['id']/('combined.wav' if state.get('parent_id') else 'recording.'+MIME[state['mime']])
+
+    def recordings(self, state):
+        if state.get('recordings'):
+            return copy.deepcopy(state['recordings'])
+        return [{'id': state['id'], 'created_at': state['created_at'], 'source': state.get('source', 'microphone'),
+                 'start': 0, 'end': state['duration']}]
+
+    async def combine_recordings(self, state, recording):
+        parent = self.get(state['parent_id'])
+        folder = self.data/state['id']
+        state['phase'] = '이전 대화와 추가 녹음을 함께 정리하고 있습니다'
+        self.save(state)
+        decoded = []
+        try:
+            for index, source in enumerate((self.analysis_audio(parent), recording)):
+                path = folder/f'part_{index}.wav'
+                decoded.append(path)
+                proc = await asyncio.create_subprocess_exec(
+                    'ffmpeg', '-nostdin', '-v', 'error', '-y', '-protocol_whitelist', 'file,pipe',
+                    '-i', str(source), '-t', '3601', '-vn', '-ac', '1', '-ar', '16000',
+                    '-c:a', 'pcm_s16le', str(path), stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL)
+                try:
+                    code = await asyncio.wait_for(proc.wait(), timeout=120)
+                except BaseException:
+                    if proc.returncode is None:
+                        proc.kill()
+                    await proc.wait()
+                    raise
+                if code:
+                    raise ValueError('추가 녹음을 읽을 수 없어요. 이전 주문은 보관되어 있습니다.')
+            def join():
+                durations = []
+                for path in decoded:
+                    with wave.open(str(path)) as src:
+                        durations.append(src.getnframes()/src.getframerate())
+                if min(durations) <= 0 or sum(durations) > 3600:
+                    raise ValueError('합쳐진 녹음은 최대 60분까지 가능해요. 새로운 주문을 시작해 주세요.')
+                tmp = folder/'combined.tmp.wav'
+                with wave.open(str(tmp), 'wb') as target:
+                    target.setnchannels(1); target.setsampwidth(2); target.setframerate(16000)
+                    for path in decoded:
+                        with wave.open(str(path)) as src:
+                            while data := src.readframes(16000*10):
+                                target.writeframesraw(data)
+                tmp.replace(folder/'combined.wav')
+                return durations
+            previous, added = await asyncio.to_thread(join)
+            segments = self.recordings(parent)
+            segments[-1]['end'] = previous
+            segments.append({'id': state['id'], 'created_at': state['created_at'],
+                             'source': state.get('source', 'microphone'), 'start': previous, 'end': previous+added})
+            state.update(duration=previous+added, recordings=segments)
+            self.save(state)
+            return folder/'combined.wav'
+        finally:
+            for path in decoded:
+                path.unlink(missing_ok=True)
+
+    async def validate_upload(self, path):
+        proc = await asyncio.create_subprocess_exec(
+            'ffprobe', '-v', 'error', '-protocol_whitelist', 'file,pipe',
+            '-show_entries', 'format=duration:stream=codec_type,duration', '-of', 'json', str(path),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        except BaseException:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.wait()
+            raise
+        try:
+            info = json.loads(stdout)
+            audio = [s for s in info.get('streams', []) if s.get('codec_type') == 'audio']
+            durations = [info.get('format', {}).get('duration')] + [s.get('duration') for s in audio]
+            duration = max(float(d) for d in durations if d not in (None, 'N/A'))
+            if proc.returncode or not audio or not math.isfinite(duration) or duration <= 0:
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise ValueError('음성 파일을 읽을 수 없거나 길이를 확인할 수 없습니다. WAV·MP3·M4A 파일로 다시 올려 주세요.')
+        if duration > 3600:
+            raise ValueError('음성 파일은 최대 60분까지 분석할 수 있습니다.')
+        return duration
 
     async def run_pipeline(self, state, recording, output):
         folder = self.data/state['id']
@@ -248,8 +390,21 @@ class Demo:
                     await proc.wait()
 
     async def list_sessions(self, request):
-        records = sorted(self.sessions.values(), key=lambda s: s['created_at'], reverse=True)[:30]
-        return web.json_response([s for s in records if s['status'] != 'cancelled'])
+        groups = {}
+        for state in self.sessions.values():
+            if state['status'] not in ('cancelled', 'deleted'):
+                groups.setdefault(self.order_id(state), []).append(state)
+        records = []
+        for members in groups.values():
+            complete = [s for s in members if s['status'] == 'complete']
+            latest = max(complete or members, key=lambda s: s.get('revision', 1))
+            record = copy.deepcopy(latest)
+            record['recording_count'] = latest.get('revision', 1)
+            pending = next((s for s in members if s.get('parent_id') and s['status'] != 'complete'), None)
+            if pending:
+                record['pending_append'] = {'id': pending['id'], 'status': pending['status']}
+            records.append(record)
+        return web.json_response(sorted(records, key=lambda s: s.get('updated_at', s['created_at']), reverse=True)[:30])
 
     async def status(self, request):
         state = self.get(request.match_info['id'])
@@ -263,7 +418,7 @@ class Demo:
             return [json.loads(line) for line in (output/name).read_text().splitlines() if line.strip()]
         return {'session': state, 'orders': json.loads((output/'orders.json').read_text()),
                 'utterances': lines('utterances.jsonl'), 'events': lines('order_events.jsonl'),
-                'metrics': json.loads((output/'metrics.json').read_text())}
+                'metrics': json.loads((output/'metrics.json').read_text()), 'recordings': self.recordings(state)}
 
     async def results(self, request):
         state = self.get(request.match_info['id'])
@@ -273,10 +428,10 @@ class Demo:
 
     async def audio(self, request):
         state = self.get(request.match_info['id'])
-        path = self.data/state['id']/('recording.'+MIME[state['mime']])
+        path = self.analysis_audio(state)
         if not path.exists():
             raise web.HTTPNotFound(text='녹음 종료 후 재생할 수 있습니다.')
-        return web.FileResponse(path, headers={'Content-Type': state['mime']})
+        return web.FileResponse(path, headers={'Content-Type': 'audio/wav' if state.get('parent_id') else state['mime']})
 
     async def rename(self, request):
         state = self.get(request.match_info['id'])
@@ -291,12 +446,29 @@ class Demo:
 
     async def cancel(self, request):
         state = self.get(request.match_info['id'])
-        async with self.locks[state['id']]:
+        async with self.order_lock(state):
             if state['status'] not in ('recording', 'queued'):
                 raise web.HTTPConflict(text='이미 분석을 시작한 녹음입니다.')
             state.update(status='cancelled', phase='녹음 취소됨')
             self.save(state)
         return web.json_response(state)
+
+    async def delete(self, request):
+        state = self.get(request.match_info['id'])
+        async with self.order_lock(state):
+            members = self.order_members(state)
+            # Deleting an unfinished addition preserves the last successful order.
+            targets = [state] if state.get('parent_id') and state['status'] != 'complete' else members
+            if any(s['status'] in ('queued', 'processing') for s in members):
+                raise web.HTTPConflict(text='분석이 끝난 뒤 삭제할 수 있습니다.')
+            if len(targets) > 1 and any(s['status'] != 'complete' for s in members):
+                raise web.HTTPConflict(text='진행 중인 추가 녹음을 먼저 삭제해 주세요.')
+            for target in targets:
+                folder = self.data / target['id']
+                if folder.exists():
+                    await asyncio.to_thread(shutil.rmtree, folder)
+                target.update(status='deleted', phase='삭제됨')
+        return web.json_response({'deleted': True})
 
     async def cleanup(self, app):
         tasks = list(self.tasks)
@@ -349,7 +521,7 @@ def create_app(data=None, runner=None, *, device='cuda', asr='whisper', separato
     app.add_routes([web.get('/', index), web.get('/api/config', demo.config), web.post('/api/pair', demo.pair),
         web.post('/api/access-link', demo.access_link),
         web.get('/api/sessions', demo.list_sessions), web.post('/api/sessions', demo.create),
-        web.get('/api/sessions/{id}', demo.status), web.post('/api/sessions/{id}/chunks/{index}', demo.chunk),
+        web.get('/api/sessions/{id}', demo.status), web.delete('/api/sessions/{id}', demo.delete), web.post('/api/sessions/{id}/chunks/{index}', demo.chunk),
         web.post('/api/sessions/{id}/finish', demo.finish), web.post('/api/sessions/{id}/cancel', demo.cancel),
         web.get('/api/sessions/{id}/result', demo.results), web.get('/api/sessions/{id}/audio', demo.audio),
         web.post('/api/sessions/{id}/names', demo.rename), web.get('/sw.js', service_worker)])

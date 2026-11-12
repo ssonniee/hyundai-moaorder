@@ -14,7 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 async def main():
     participant_count = 2
+    finish_gate = asyncio.Event()
     async def fixture_runner(state, recording, output):
+        await finish_gate.wait()
         output.mkdir()
         turns = [dict(id='1', speaker='speaker_0', start=0., end=1., text='아메리카노 하나'),
                  dict(id='2', speaker='speaker_1', start=1., end=2., text='카페라떼 하나'),
@@ -58,7 +60,18 @@ async def main():
                 await page.wait_for_function("document.getElementById('recordBadge').textContent.includes('녹음 중')")
                 await page.wait_for_timeout(1200)
                 await page.locator('#stopBtn').click()
+                await page.wait_for_selector('#orderSummary[data-state="processing"] .analysis-status')
+                assert await page.locator('#orderCards').get_attribute('aria-busy') == 'true'
+                assert await page.locator('#micOrbit').is_visible()
+                assert await page.locator('#waveformPanel').is_hidden()
+                for theme in ('dark', 'light'):
+                    await page.locator(f'[data-set-theme="{theme}"]').click()
+                    await page.wait_for_timeout(200)
+                    await page.locator('#orderSummary').screenshot(path=str(ROOT/f'demo/test-artifacts/analysis-{theme}.png'))
+                finish_gate.set()
                 await page.wait_for_selector('#results', state='visible')
+                assert await page.locator('.analysis-status').count() == 0
+                assert await page.locator('#orderCards').get_attribute('aria-busy') == 'false'
                 cards = page.locator('.order-card')
                 assert await cards.count() == 2
                 first = await cards.nth(0).inner_text()
@@ -93,6 +106,9 @@ async def main():
                 participant_count = 8
                 await page.locator('#newBtn').click()
                 assert await cards.count() == 0
+                assert await page.locator('#startBtn').is_disabled()
+                await page.locator('#storeSearch').fill('스타벅스')
+                await page.locator('[data-store]').click()
                 await page.locator('#startBtn').click()
                 await page.wait_for_function("document.getElementById('recordBadge').textContent.includes('녹음 중')")
                 await page.wait_for_timeout(1200)

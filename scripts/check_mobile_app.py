@@ -57,6 +57,7 @@ async def main():
                 await page.reload()
                 await page.wait_for_function('navigator.serviceWorker.controller !== null')
                 await page.wait_for_selector('#health.ready')
+                await page.locator('#storeSearch').fill('스타벅스')
                 await page.locator('[data-store="starbucks_wangsimni_exit9"]').click()
                 await page.locator('#startBtn').click()
                 await page.wait_for_selector('#waveformPanel[data-input="signal"]')

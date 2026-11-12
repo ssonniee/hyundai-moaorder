@@ -47,6 +47,15 @@ class DemoTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.01)
         self.fail('job did not finish')
 
+    async def test_deleted_records_do_not_hide_older_orders(self):
+        kept = await self.create()
+        for _ in range(30):
+            deleted = await self.create()
+            response = await self.client.delete('/api/sessions/'+deleted, headers=self.headers)
+            self.assertEqual(response.status, 200)
+        records = await (await self.client.get('/api/sessions', headers=self.headers)).json()
+        self.assertEqual([s['id'] for s in records], [kept])
+
     async def test_authentication_origin_and_secure_pairing(self):
         self.assertEqual((await self.client.get('/api/sessions')).status, 401)
         bad = await self.client.post('/api/pair', headers={'X-Drive-Order': '1'}, json={'key': 'wrong'})
@@ -156,6 +165,54 @@ class DemoTests(unittest.IsolatedAsyncioTestCase):
             'catalog_store_id': 'unknown', 'mime': 'audio/webm'})
         self.assertEqual(invalid.status, 400)
 
+
+
+
+    async def test_upload_validation_and_actual_deletion(self):
+        import io
+        import wave
+        audio = io.BytesIO()
+        with wave.open(audio, 'wb') as f:
+            f.setnchannels(1); f.setsampwidth(2); f.setframerate(16000); f.writeframes(b'\0\0' * 16000)
+        payload = audio.getvalue()
+        async def upload(data):
+            response = await self.client.post('/api/sessions', headers=self.headers, json={
+                'destination': {'name':'업로드 매장', 'latitude':37.56, 'longitude':126.97},
+                'menu':[{'name':'라떼'}], 'mime':'audio/wav', 'source':'upload', 'expected_bytes':len(data)})
+            self.assertEqual(response.status, 201)
+            id = (await response.json())['id']
+            base = '/api/sessions/'+id
+            await self.client.post(base+'/chunks/0', headers=self.headers, data=data[:10])
+            self.assertEqual((await self.client.post(base+'/finish', headers=self.headers, json={'chunks':1})).status, 409)
+            await self.client.post(base+'/chunks/1', headers=self.headers, data=data[10:])
+            await self.client.post(base+'/finish', headers=self.headers, json={'chunks':2,'duration':0})
+            return id, await self.await_done(id)
+        id, state = await upload(payload)
+        self.assertEqual(state['status'], 'complete')
+        self.assertAlmostEqual(state['duration'], 1, places=2)
+        self.assertEqual(len(self.calls), 1)
+        self.assertTrue((Path(self.temp.name)/id).exists())
+        self.assertEqual((await self.client.delete('/api/sessions/'+id, headers=self.headers)).status, 200)
+        self.assertFalse((Path(self.temp.name)/id).exists())
+        self.assertEqual((await self.client.get('/api/sessions/'+id, headers=self.headers)).status, 404)
+        self.assertEqual((await self.client.get('/api/sessions/'+id+'/audio', headers=self.headers)).status, 404)
+        self.assertEqual((await self.client.post('/api/sessions/'+id+'/chunks/2', headers=self.headers, data=b'x')).status, 404)
+        bad, state = await upload(b'not an audio file at all')
+        self.assertEqual(state['status'], 'failed')
+        self.assertEqual(len(self.calls), 1, 'invalid audio must not reach inference')
+        self.assertEqual((await self.client.delete('/api/sessions/'+bad, headers=self.headers)).status, 200)
+        self.assertEqual(await (await self.client.get('/api/sessions', headers=self.headers)).json(), [])
+
+    async def test_delete_blocked_during_analysis_and_requires_auth(self):
+        id = await self.create()
+        base = '/api/sessions/'+id
+        self.assertEqual((await self.client.delete(base, headers={'X-Drive-Order': '1'})).status, 401)
+        for status in ('queued','processing'):
+            self.app['demo'].sessions[id]['status'] = status
+            self.assertEqual((await self.client.delete(base, headers=self.headers)).status, 409)
+            self.assertTrue((Path(self.temp.name)/id).exists())
+        self.app['demo'].sessions[id]['status'] = 'recording'
+        self.assertEqual((await self.client.delete(base, headers=self.headers)).status, 200)
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,6 +1,6 @@
 'use strict';
-const CACHE = 'moa-shell-v2';
-const SHELL = ['/', '/static/style.css', '/static/app.js', '/static/pwa.js', '/static/microphone.js', '/static/manifest.webmanifest',
+const CACHE = 'moa-shell-v12';
+const SHELL = ['/', '/static/style.css', '/static/themes.css', '/static/theme.js', '/static/app.js', '/static/pwa.js', '/static/microphone.js', '/static/manifest.webmanifest',
   '/static/vendor/leaflet.js', '/static/vendor/leaflet.css',
   '/static/icons/icon-180.png', '/static/icons/icon-192.png', '/static/icons/icon-512.png'];
 self.addEventListener('install', event => {

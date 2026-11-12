@@ -24,6 +24,19 @@ TONE = '''navigator.mediaDevices.getUserMedia = async () => {
 };'''
 
 
+async def waveform_ink(page):
+    # Count visible waveform outside the center dots, independent of theme color.
+    return await page.evaluate('''() => {
+      const c = document.getElementById('waveform'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let n = 0;
+      for (let y = 0; y < c.height; y++) {
+        if (Math.abs(y - c.height / 2) < c.height * .06) continue;
+        for (let x = 0; x < c.width; x++) if (d[(y*c.width+x)*4+3] > 0) n++;
+      }
+      return n;
+    }''')
+
+
 async def main():
     async def runner(state, recording, output):
         assert recording.stat().st_size > 1000
@@ -59,8 +72,16 @@ async def main():
                     page.on('pageerror', lambda error: errors.append(str(error)))
                     await page.goto('http://127.0.0.1:8766/#key='+app['demo'].access_key)
                     await page.wait_for_selector('#health.ready')
+                    await page.locator('#storeSearch').fill('스타벅스')
                     await page.locator('[data-store="starbucks_wangsimni_exit9"]').click()
+                    await page.locator('#micOrbit').click()
+                    await page.wait_for_selector('#waveformPanel[data-input="signal"]')
+                    await page.evaluate('window.previewBeforeRecord = previewStream')
+                    assert not app['demo'].sessions or failing
                     await page.locator('#startBtn').click()
+                    await page.wait_for_function("phase === 'recording'")
+                    assert await page.locator('#micOrbit').is_hidden()
+                    assert await page.evaluate("previewBeforeRecord.getTracks().every(t => t.readyState === 'ended') && previewStream === null")
                     await page.wait_for_selector('#waveformPanel[data-input="signal"]')
                     await page.wait_for_timeout(1600)
                     id = await page.evaluate("localStorage.getItem('moa-active')")
@@ -70,6 +91,7 @@ async def main():
                         await page.wait_for_selector('#retryBtn', state='visible', timeout=15000)
                         assert await page.locator('#saveStatus').get_attribute('data-state') == 'error'
                         assert app['demo'].sessions[id]['bytes'] == 0
+                        assert await page.locator('#recordDescription').is_visible()
                         assert await page.evaluate('audioContext === null && meterSource === null')
                     else:
                         gate.set()
@@ -77,17 +99,14 @@ async def main():
                         assert app['demo'].sessions[id]['bytes'] > 0
                         assert 'KB' in await page.locator('#saveStatus').inner_text()
                         assert await page.evaluate('savedBytes') == app['demo'].sessions[id]['bytes']
+                        assert await waveform_ink(page) > 100, 'signal must draw visible bars'
                         await page.locator('#recorderCard').screenshot(path=str(ROOT/'demo/test-artifacts/recording-waveform.png'))
-                        # Silence must eventually remove the previous sound from the 8-second history.
+                        # Silence must eventually remove the previous sound from the 4-second history.
                         await page.evaluate('testTone.gain.gain.value = 0')
                         await page.wait_for_selector('#waveformPanel[data-input="quiet"]')
-                        await page.wait_for_timeout(8300)
-                        ink = await page.evaluate('''() => {
-                            const c = document.getElementById('waveform'), data = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-                            let count = 0; for (let i=0; i<data.length; i+=4) if (data[i]===49 && data[i+1]===130 && data[i+2]===104 && data[i+3]>0) count++;
-                            return count;
-                        }''')
-                        assert ink == 0, f'silence has {ink} waveform pixels'
+                        await page.wait_for_timeout(4300)
+                        ink = await waveform_ink(page)
+                        assert ink == 0, f'silence has {ink} waveform pixels away from the center line'
                         await page.evaluate('testTone.gain.gain.value = .12')
                         await page.wait_for_selector('#waveformPanel[data-input="signal"]')
                         await page.evaluate('audioContext.suspend()')
@@ -97,6 +116,8 @@ async def main():
                         await page.locator('#stopBtn').click()
                         await page.wait_for_selector('#results', state='visible')
                         assert await page.locator('#waveformPanel').get_attribute('data-input') == 'stopped'
+                        assert await page.locator('#waveformPanel').is_hidden()
+                        assert await page.locator('#micOrbit').is_visible()
                         assert await page.locator('#saveStatus').get_attribute('data-state') == 'saved'
                         assert await page.evaluate('audioContext === null && meterSource === null')
                         await page.locator('#newBtn').click()

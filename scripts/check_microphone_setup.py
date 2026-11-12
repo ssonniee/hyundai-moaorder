@@ -43,11 +43,13 @@ async def main():
                 page.on('pageerror', lambda error: errors.append(str(error)))
                 await page.goto('http://127.0.0.1:8769/#key='+app['demo'].access_key)
                 await page.wait_for_selector('#health.ready')
+                await page.locator('#microphoneSettings > summary').click()
                 await page.locator('#checkMicBtn').click()
                 await page.wait_for_function("document.getElementById('micStatus').textContent.includes('실제 소리 입력')")
                 assert await page.evaluate("checkedStream.getTracks().every(t => t.readyState === 'ended')")
                 assert await page.evaluate('micOptions.audio === true')
                 assert not app['demo'].sessions, 'Microphone check must not save/upload audio'
+                await page.locator('#storeSearch').fill('스타벅스')
                 await page.locator('[data-store="starbucks_wangsimni_exit9"]').click()
                 for name, phrase in [('NotFoundError', '녹음 장치를'), ('NotAllowedError', '허용되지'), ('NotReadableError', '열지 못했어요')]:
                     await page.evaluate("name => navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('test', name); }", name)

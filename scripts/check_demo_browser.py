@@ -38,6 +38,7 @@ async def main():
             await page.goto('http://127.0.0.1:8766/#key='+app['demo'].access_key)
             await page.wait_for_selector('#health.ready')
             for store in app['demo'].stores.values():
+                await page.locator('#storeSearch').fill(store['name'])
                 await page.locator('[data-store="'+store['id']+'"]').click()
                 assert await page.locator('#placeName').input_value() == store['name']
                 assert await page.locator('#menuChips span').count() == len(store['items'])
@@ -48,13 +49,14 @@ async def main():
             # The numbered map marker must select the same catalogue as the cards.
             await page.locator('.leaflet-marker-icon[title="맥도날드 한양대"]').click()
             assert await page.locator('#menuChips span').count() == 5
+            await page.locator('#storeSearch').fill('스타벅스')
             await page.locator('[data-store="starbucks_wangsimni_exit9"]').click()
             assert not await page.locator('#startBtn').is_disabled()
             assert await page.evaluate('document.documentElement.scrollWidth <= innerWidth'), 'mobile horizontal overflow'
             await page.screenshot(path=str(artifacts/'mobile-before.png'), full_page=True)
             await page.locator('#startBtn').click()
             await page.wait_for_function("document.getElementById('recordBadge').textContent.includes('녹음 중')")
-            assert await page.locator('[data-store="mcdonalds_hanyang"]').is_disabled()
+            assert await page.locator('#storeSearch').is_disabled()
             await page.wait_for_timeout(6500)
             await page.screenshot(path=str(artifacts/'mobile-recording.png'), full_page=True)
             await page.locator('#stopBtn').click()
@@ -82,7 +84,7 @@ async def main():
             await page.wait_for_selector('#results', state='visible')
             assert '스타벅스 왕십리역9번출구점' in await page.locator('#resultSubtitle').inner_text()
             await page.locator('#newBtn').click()
-            assert not await page.locator('[data-store="mcdonalds_hanyang"]').is_disabled()
+            assert not await page.locator('#storeSearch').is_disabled()
             assert await page.locator('#results').is_hidden()
             report = {'status': 'passed', 'virtual_microphone': True, 'human_speech_accuracy_tested': False,
                       'recording_bytes': recording.stat().st_size, 'duration': state['duration'],

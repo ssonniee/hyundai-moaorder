@@ -14,6 +14,7 @@ function microphoneError(error) {
     UnsupportedMicrophone: '이 화면에서는 마이크에 접근할 수 없어요. HTTPS 주소 또는 이 PC의 localhost 주소를 일반 브라우저로 열어 주세요.',
     AbortError: '마이크 연결이 중단됐어요. 다시 시도해 주세요.'
   };
+  $('microphoneSettings').open = true;
   const message = messages[error.name] || error.message || '마이크 연결을 확인해 주세요.';
   $('micStatus').textContent = message; $('micStatus').dataset.state = 'error';
   $('micHelp').hidden = false; $('micHelpText').textContent = message;
@@ -58,6 +59,7 @@ async function openMicrophone() {
 
 async function checkMicrophone() {
   if (busy()) return;
+  stopMicPreview();
   micChecking = true; lockSetup(true); $('startBtn').disabled = true;
   $('micStatus').textContent = '마이크 권한을 허용한 뒤 짧게 말해 주세요. 음성은 저장하거나 보내지 않아요.';
   $('micStatus').dataset.state = 'checking'; $('micHelp').hidden = true;
