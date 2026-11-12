@@ -1,0 +1,44 @@
+[
+  {
+    "id": "starbucks_wangsimni_exit9", "name": "스타벅스 왕십리역9번출구점", "category": "카페",
+    "address": "서울 성동구 고산자로 234", "latitude": 37.5605409, "longitude": 127.0352672,
+    "location_source": "https://cashwalk.com/local/seutabeogseu-wangsibriyeog9beonculgujeom",
+    "menu_source": "user_provided", "menu_version": "2026-11-12",
+    "items": [
+      {"name": "윈터 스카치 바닐라 라떼", "aliases": ["윈터스카치바닐라라떼", "스카치 바닐라 라떼", "윈터 스카치 라떼", "윈터 라떼", "스카치 라떼"]},
+      {"name": "토피넛라떼", "aliases": ["토피넛 라떼", "토피 넛 라떼", "토피넛", "토피 너트 라떼"]},
+      {"name": "딸기 딜라이트 요거트 블렌디드", "aliases": ["딸기딜라이트요거트블렌디드", "딸기 딜라이트", "딸기 요거트 블렌디드", "딸기 요거트"]},
+      {"name": "클래식 뱅쇼 히비스커스 티", "aliases": ["클래식 뱅쇼", "뱅쇼 히비스커스 티", "히비스커스 티", "뱅쇼"]},
+      {"name": "살구 조이풀 메들리 티 라떼", "aliases": ["살구 조이풀", "조이풀 메들리 티 라떼", "살구 티 라떼", "살구 라떼"]},
+      {"name": "차이티 라떼", "aliases": ["차이 티 라떼", "차이티라떼", "차이 라떼"]},
+      {"name": "스타벅스 딸기 라떼", "aliases": ["딸기 라떼", "딸기라떼", "스타벅스딸기라떼"]},
+      {"name": "블랙글레이즈드 라떼", "aliases": ["블랙 글레이즈드 라떼", "블랙글레이즈드라떼", "블랙 글레이즈드", "블글라"]}
+    ]
+  },
+  {
+    "id": "mcdonalds_hanyang", "name": "맥도날드 한양대", "category": "버거",
+    "address": "서울 성동구 왕십리로 227", "latitude": 37.557231637713805, "longitude": 127.0419206928915,
+    "location_source": "https://www.tabling.co.kr/place/677cc75466de5f0698748132",
+    "menu_source": "user_provided", "menu_version": "2026-11-12",
+    "items": [
+      {"name": "빅맥 세트", "aliases": ["빅맥세트", "빅맥 셋트"]},
+      {"name": "맥스파이스 상하이 버거 세트", "aliases": ["맥스파이시 상하이 버거 세트", "상하이 버거 세트", "상하이 세트", "상하이버거세트", "상하이 셋트"]},
+      {"name": "1955 버거 세트", "aliases": ["1955 세트", "1955버거세트", "일구오오 버거 세트", "일구오오 세트", "천구백오십오 버거 세트", "천구백오십오 세트"]},
+      {"name": "불고기 버거 세트", "aliases": ["불고기버거세트", "불고기 세트", "불고기버거 세트"]},
+      {"name": "슈슈버거 세트", "aliases": ["슈슈 버거 세트", "슈슈 세트", "슈슈버거세트"]}
+    ]
+  },
+  {
+    "id": "baeksojeong_hanyang", "name": "백소정 한양대점", "category": "일식",
+    "address": "서울 성동구 마조로 29 2층", "latitude": 37.56036871481135, "longitude": 127.04102253151478,
+    "location_source": "https://www.tabling.co.kr/place/677cd18166de5f069888066b",
+    "menu_source": "user_provided", "menu_version": "2026-11-12",
+    "items": [
+      {"name": "돈카츠", "aliases": ["돈까스", "돈가스", "돈카쓰", "돈가츠"]},
+      {"name": "모짜렐라 치즈카츠", "aliases": ["모차렐라 치즈카츠", "모짜렐라치즈카츠", "모짜렐라 치즈 카츠", "치즈카츠", "치즈 카츠", "치즈돈까스", "치즈 돈까스"]},
+      {"name": "마제소바", "aliases": ["마제 소바"]},
+      {"name": "에비텐 어묵우동", "aliases": ["에비텐어묵우동", "에비텐 어묵 우동", "어묵우동", "어묵 우동", "에비텐 우동"]},
+      {"name": "가츠동", "aliases": ["카츠동", "가쓰동"]}
+    ]
+  }
+]

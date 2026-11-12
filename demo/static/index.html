@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="모아오더">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" content="#165b46"><title>모아오더 · 가는 동안, 주문을 모아요</title>
+  <link rel="stylesheet" href="/static/vendor/leaflet.css"><link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/vendor/leaflet.js"></script><script defer src="/static/pwa.js"></script><script defer src="/static/microphone.js"></script><script defer src="/static/app.js"></script>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/" aria-label="모아오더 홈"><span class="brand-icon">m<span>o</span></span>모아오더<span class="brand-en">MOA ORDER</span></a><div class="top-right"><span id="health" class="connection"><i></i>엔진 연결 중</span><span class="demo-badge">RECORDING DEMO</span></div></header>
+<main>
+  <section id="connectionPanel" class="card connection-panel" hidden aria-label="앱 연결">
+    <h2 id="connectionTitle">모아오더 연결하기</h2><p id="connectionMessage">전달받은 접속 링크 또는 접속 키를 입력해 주세요.</p>
+    <form id="pairForm"><label for="pairKey">접속 링크 또는 키</label><input id="pairKey" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" required><button class="button primary" type="submit">연결하기</button></form>
+    <p id="pairError" role="alert"></p><button id="reconnectBtn" class="button secondary">다시 연결</button>
+  </section>
+  <details id="installGuide" class="install-guide"><summary>휴대폰에 모아오더 설치하기</summary><p>iPhone Safari에서 공유 버튼 → ‘홈 화면에 추가’를 선택하세요. ‘웹 앱으로 열기’가 보이면 켜 주세요. 홈 화면의 모아오더 아이콘으로 실행할 수 있어요.</p><p>녹음과 주문 분석에는 서버 연결이 필요해요. 녹음 중에는 앱을 화면에 열어 두세요.</p><button id="installBtn" class="button small secondary" hidden>앱 설치</button></details>
+  <section class="intro"><div><div class="eyebrow">ON THE WAY, ALL TOGETHER</div><h1>가는 동안 이야기하면,<br class="mobile-break"> 주문이 모여요<span>.</span></h1><p>목적지를 고르고 평소처럼 이야기하세요. 누가 무엇을 먹을지, 바뀐 메뉴까지 정리해 드릴게요.</p></div><button id="newBtn" class="button secondary" disabled>＋ 새로운 목적지</button></section>
+  <nav class="steps" aria-label="진행 단계"><span class="active" id="step1"><b>01</b> 목적지 선택</span><i></i><span id="step2"><b>02</b> 대화 녹음</span><i></i><span id="step3"><b>03</b> 주문 확인</span><small>목적지를 확정하면 녹음이 시작됩니다</small></nav>
+  <div class="workspace">
+    <section class="left-column">
+      <div class="card map-card"><div class="card-heading"><div><h2>어디로 갈까요?</h2><p>매장 카드나 지도 위 번호를 누르면 메뉴가 준비돼요.</p></div><button id="locateBtn" class="button small secondary" aria-label="현재 위치로 지도 이동">◎ 현재 위치</button></div>
+        <div id="storeList" class="store-list" role="group" aria-label="등록된 매장 선택"></div>
+        <div id="map" aria-label="목적지 선택 지도" tabindex="0"></div>
+        <div id="mapNotice" class="map-notice" hidden>지도를 불러오지 못했습니다. 위의 매장 카드로도 선택할 수 있습니다.</div>
+        <div class="destination"><span class="pin-symbol">↗</span><div><label for="placeName">목적지 이름</label><input id="placeName" maxlength="120" placeholder="예: 함께 갈 카페 또는 드라이브스루" autocomplete="off"><span id="coordinates">아직 선택된 위치가 없어요</span></div><span id="destinationBadge" class="tag">선택 전</span></div>
+        <details class="coordinate-entry"><summary>좌표로 위치 선택</summary><div><label>위도<input id="lat" type="number" step="any" placeholder="37.5665"></label><label>경도<input id="lng" type="number" step="any" placeholder="126.9780"></label><button id="coordinateBtn" class="button small secondary">위치 지정</button></div></details>
+      </div>
+      <div class="card menu-card"><div class="card-heading"><div><h2 id="menuTitle">선택한 매장의 메뉴</h2><p id="menuDescription">매장을 선택하면 등록된 메뉴를 자동으로 불러옵니다.</p></div><span id="menuSource" class="tag">선택 전</span></div>
+        <div id="customMenuTabs" class="menu-tabs" role="group" aria-label="메뉴 입력 시작점" hidden><button data-menu="cafe">카페</button><button data-menu="burger">버거</button><button data-menu="meal">식사</button><button data-menu="custom">직접 입력</button></div>
+        <div id="menuChips" class="chips"></div><details id="menuEditor"><summary>메뉴 수정하기 <span>＋</span></summary><label class="sr-only" for="menuText">메뉴 목록</label><textarea id="menuText" rows="6" spellcheck="false"></textarea><p class="hint">한 줄에 메뉴 하나. 별칭은 <code>아메리카노 | 아아, 아메</code>처럼 입력하세요.</p></details>
+        <div class="menu-note"><span>ⓘ</span><span id="menuNote">직접 제공해 주신 3개 매장의 메뉴를 사용합니다. 실시간 판매 여부와 가격은 조회하지 않습니다.</span></div>
+      </div>
+    </section>
+    <section class="right-column">
+      <div class="card recorder-card" id="recorderCard"><div class="card-heading"><h2>우리의 주문 대화</h2><span id="recordBadge" class="tag">시작 전</span></div>
+        <div class="microphone-setup">
+          <label for="microphoneSelect">녹음할 마이크</label><div class="microphone-controls"><select id="microphoneSelect"><option value="">기본 마이크</option></select><button id="checkMicBtn" class="button small secondary" type="button">마이크 확인</button></div>
+          <p id="micStatus" role="status">지금 페이지를 연 기기의 마이크를 사용해요.</p><progress id="micLevel" max="100" value="0" aria-label="마이크 확인 중 입력 크기" hidden></progress>
+          <div id="micHelp" class="mic-help" hidden><p id="micHelpText"></p><p>Codex 미리보기에서 작동하지 않으면 아래 링크를 복사해 Chrome·Edge·Safari의 주소창에 붙여넣어 주세요.</p></div>
+          <button id="copyBrowserLink" class="button text" type="button">다른 브라우저용 링크 복사</button>
+          <input id="browserLink" readonly aria-label="다른 브라우저에서 열 접속 링크" hidden>
+        </div>
+        <div class="recorder-center"><div class="mic-orbit" id="micOrbit"><svg width="30" height="38" viewBox="0 0 30 38" fill="none" aria-hidden="true"><rect x="9" y="2" width="12" height="22" rx="6" stroke="currentColor" stroke-width="2.5"/><path d="M3 17v2a12 12 0 0024 0v-2M15 31v5M9 36h12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg></div>
+          <div id="timer" class="timer">00:00</div><h3 id="recordTitle">목적지부터 골라볼까요?</h3><p id="recordDescription">위치를 선택하고 출발 버튼을 누르면<br>마이크를 켜고 대화를 기록해요.</p>
+          <div id="waveformPanel" class="waveform-panel" hidden>
+            <div class="waveform-heading"><span id="inputStatus" role="status">마이크 입력 연결 중</span><button id="resumeMeterBtn" class="button small secondary" type="button" hidden>파형 켜기</button><span class="waveform-live">LIVE</span></div>
+            <canvas id="waveform" width="560" height="112" aria-label="최근 8초의 실제 마이크 입력 크기"></canvas>
+            <div class="waveform-caption"><span>실시간 마이크 입력 · 최근 8초</span><span>지금 →</span></div>
+            <div id="saveStatus" class="save-status" role="status" data-state="waiting">첫 음성 저장을 기다리는 중</div>
+          </div>
+          <div id="recordingTip" class="recording-tip" hidden>“나는 라떼 하나.” “아, 라떼 말고 아메리카노로!”<br>메뉴 변경도 자연스럽게 이야기해 보세요.</div>
+        </div>
+        <div class="recorder-actions"><button id="startBtn" class="button primary large" disabled>목적지를 선택해 주세요</button><button id="stopBtn" class="button primary large" hidden><span class="stop-square"></span> 녹음 마치고 주문 정리</button><button id="retryBtn" class="button primary large" hidden>다시 분석하기</button><button id="cancelBtn" class="button text" hidden>녹음 취소</button></div>
+        <div class="recorder-footer"><span id="uploadStatus">녹음 중에는 이 화면을 켜두세요</span><span>최대 60분</span></div>
+      </div>
+      <div id="tripCard" class="card trip-card" hidden><div class="trip-icon">↗</div><div><small>지금 향하는 곳</small><strong id="tripName"></strong><a id="navigationLink" target="_blank" rel="noopener">지도에서 길 안내 열기 ↗</a><small>다른 앱으로 이동하면 녹음이 중단될 수 있어요.</small></div></div>
+      <section id="orderSummary" class="card order-summary" aria-label="사람별 최종 주문">
+        <div class="card-heading"><div><h2>최종 주문</h2><p id="summaryDescription">녹음을 마치면 사람별 마지막 주문이 여기에 모여요.</p></div><span id="summaryCount" class="tag" role="status">분석 대기</span></div>
+        <div id="reviewBanner" class="review-banner" hidden>겹친 대화나 모호한 발화가 있어요. 주문과 원문을 확인해 주세요.</div>
+        <div id="orderCards" class="order-cards"><p class="summary-empty">매장을 고르고 주문 대화를 녹음해 주세요.</p></div>
+      </section>
+    </section>
+  </div>
+  <section id="results" class="results-section" hidden><div class="section-heading"><div><div class="eyebrow">OUR CONVERSATION</div><h2>대화와 주문 변경 이력</h2><p id="resultSubtitle"></p></div><a id="downloadLink" class="button secondary" download>결과 내려받기 ↓</a></div>
+    <div class="card conversation-card"><div class="card-heading"><h2>어떤 이야기를 나눴나요?</h2><span id="turnCount" class="tag"></span></div><audio id="playback" controls preload="metadata"></audio><div class="result-tabs"><button class="selected" data-view="transcript">화자별 대화</button><button data-view="changes">주문 변경 이력</button></div><div id="transcript"></div><div id="changes" hidden></div></div>
+  </section>
+  <section class="history-section"><div class="section-heading"><h2>최근 녹음</h2><button id="refreshHistory" class="button text">새로고침 ↻</button></div><div id="history"><p class="empty-history">아직 녹음이 없어요. 오늘의 첫 주문 대화를 시작해 보세요.</p></div></section>
+  <footer><span>모아오더 <b>·</b> 내 목소리로 확인하는 주문 데모</span><span>실제 주문·결제는 실행하지 않습니다.</span></footer>
+</main><div id="toast" role="status" aria-live="polite" hidden></div>
+</body></html>

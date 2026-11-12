@@ -1,0 +1,8 @@
+{"id":"u1","speaker":"speaker_0","start":0.0,"end":3.0,"text":"그럼 저는 감자 뺀 카레라이스로 하나 부탁해요.","needs_review":false}
+{"id":"u2","speaker":"speaker_1","start":3.5,"end":6.0,"text":"저는 짬뽕 하나 주세요.","needs_review":false}
+{"id":"u3","speaker":"speaker_0","start":7.0,"end":10.0,"text":"아까 카레 말고 짜장면 두 개로 바꿀게요. 감자 빼는 건 취소요.","needs_review":false}
+{"id":"u4","speaker":"speaker_1","start":11.0,"end":13.0,"text":"제로 콜라도 두 잔 추가해 주세요.","needs_review":false}
+{"id":"u5","speaker":"speaker_0","start":14.0,"end":16.0,"text":"만두는 얼마예요?","needs_review":false}
+{"id":"u6","speaker":"speaker_1","start":17.0,"end":19.0,"text":"제로 콜라는 취소하고 짬뽕만 주세요.","needs_review":false}
+{"id":"u7","speaker":"speaker_0","start":20.0,"end":22.0,"text":"스테이크도 하나 주세요.","needs_review":false}
+{"id":"u8","speaker":"speaker_1","start":23.0,"end":25.0,"text":"카레로 바꿀게요.","needs_review":true,"method":"unresolved_overlap"}

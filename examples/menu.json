@@ -1,0 +1,16 @@
+{
+  "store_id": "demo-restaurant-001",
+  "name": "검증용 가상 식당 (실제 매장 메뉴 아님)",
+  "version": "2026-11-11-demo",
+  "source": "manually_curated_fixture",
+  "items": [
+    {"id": "curry", "name": "카레라이스", "aliases": ["카레"]},
+    {"id": "jajang", "name": "짜장면", "aliases": ["자장면"]},
+    {"id": "jjamppong", "name": "짬뽕", "aliases": []},
+    {"id": "cola", "name": "콜라", "aliases": []},
+    {"id": "zero_cola", "name": "제로 콜라", "aliases": ["제로콜라"]},
+    {"id": "dumpling", "name": "만두", "aliases": []},
+    {"id": "beef_pizza", "name": "소고기 피자", "aliases": []},
+    {"id": "special_tendon", "name": "스페셜텐동", "aliases": ["스페셜 텐동"]}
+  ]
+}

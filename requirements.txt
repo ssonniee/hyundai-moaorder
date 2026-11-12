@@ -1,0 +1,12 @@
+# Use the existing nemo environment first. Exact tested versions are in environment.txt.
+torch>=2.6
+transformers>=5.19
+nemo_toolkit[asr]>=3.0
+numpy
+scipy
+soundfile
+huggingface_hub
+lm-format-enforcer==0.11.3
+interegular==0.3.3
+aiohttp>=3.9
+# ffmpeg is a system executable. torchaudio is not required by the vendored separator.

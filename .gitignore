@@ -1,0 +1,17 @@
+models/
+results/
+__pycache__/
+*.pyc
+.venv/
+.deps/
+.demo-deps/
+demo/sessions/
+demo/test-artifacts/
+demo/bin/
+demo/mobile-access*
+demo/tunnel.log
+demo/server.log
+demo/server.pid
+demo/tls/
+ios/**/xcuserdata/
+ios/build/
