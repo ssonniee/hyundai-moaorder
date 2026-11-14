@@ -64,9 +64,12 @@ flowchart LR
   S -->|두 화자| P[SepFormer 음원분리와 화자 대응]
   P --> R
   R --> T[화자·시간·발화 원문 저장]
-  B --> Q[Qwen 주문 변경 연산 추출]
-  T --> Q
-  Q --> V[메뉴·증거·수량 검증]
+  B --> H{주문 의도 라우팅}
+  T --> H
+  H -->|단순 신규 주문| E[메뉴·수량 규칙 추출]
+  H -->|변경·취소·옵션| Q[Qwen 문맥 기반 변경 연산]
+  E --> V[메뉴·증거·수량·상태 검증]
+  Q --> V
   V --> O[화자별 주문 초안과 변경 이력]
 ```
 
@@ -75,7 +78,7 @@ flowchart LR
 | 화자분리 | NVIDIA Nemotron-3-Diarization, 약 0.1B | 스트리밍 speaker cache를 녹음 전체에서 유지. 최대 8개 익명 화자 채널 |
 | 음원분리 | SpeechBrain SepFormer WSJ0-2Mix, 약 26M | 두 화자가 겹친 구간에만 실행. 주변의 단독 발화 에너지로 출력 채널을 화자에 대응 |
 | 한국어 ASR | Whisper large-v3-turbo, 약 0.8B | 비교용 한국어 겹침 실험에서 기존 ASR보다 빠른 실행. Nemotron 0.6B도 `--asr nemo`로 유지 |
-| 주문 추출 | Qwen3-4B-Instruct-2507 | 1.7B 비교에서 발생한 화자 혼동 때문에 4B 채택. JSON 스키마 생성 + 별도 장부 검증 |
+| 주문 추출 | 규칙 + Qwen 하이브리드 | 단순 주문은 즉시 처리하고, 변경·취소·옵션만 같은 화자의 장부·최근 발화와 함께 Qwen에 전달. JSON 스키마 생성 + 별도 장부 검증 |
 | 상태 저장 | JSON / JSONL / RTTM / NPY | 발화와 주문 결정의 근거를 확인하고 재실행 가능 |
 
 화자분리만으로 겹친 음성이 분리되지는 않는다. 음원분리를 별도 수행하며, 분리 채널 번호를 화자 번호로 간주하지 않는다. 대응 근거가 없거나 상충하면 `needs_review=true`로 저장하고 해당 발화로 주문을 갱신하지 않는다.
@@ -115,7 +118,39 @@ LLM은 주문표를 통째로 덮어쓰지 않고 `set`, `add`, `remove`, `clear
 
 등록되지 않은 메뉴 ID, 발화 근거가 없는 음식, 잘못된 수량, 불확실한 화자 대응은 확인 대상으로 돌린다. 메뉴명/별칭 증거 검사는 보수적이므로 심한 ASR 오인식은 자동 보정하지 못할 수 있다. 옵션은 사용자의 요청을 기록한 것이며 식당의 제공 가능 여부를 보증하지 않는다. 모든 결과는 주문 **초안**이고 실제 주문/결제는 실행하지 않는다.
 
+`--order-backend hybrid`는 평범한 메뉴·수량 발화에는 규칙을 사용하고 `아니다`, `말고`, 변경·취소·옵션 표현에만 LLM을 지연 적재한다. LLM이 이전 메뉴명을 생략한 변경을 해석해도, 기존 주문이 하나이고 새 메뉴가 현재 발화에서 확인되는 경우에만 자동 교체한다. 기존 주문이 여러 개라 대상이 모호하면 장부를 바꾸지 않고 확인 대상으로 남긴다.
+
 화자 대응이 성공해 장부에 반영된 겹침 발화도 `overlap_confirmation_count`에 집계하고 `status=needs_confirmation`으로 저장한다. 분리·전사에서 일부 메뉴가 누락될 가능성이 실제 검증에서 확인되었기 때문이다. 이 상태를 실제 주문 확정으로 취급하면 안 된다.
+
+## Nemotron 3.5 Transcribe 비교 실험
+
+`--speech-backend nemotron35`는 `Nemotron-3-Diarization → SepFormer → Whisper`를 건너뛰고, 전체 16 kHz 녹음을 Nemotron 3.5 Transcribe에 전달한다. 모델이 반환한 화자 태그와 CTC 단어 시각을 기존 `utterances.jsonl` 형식으로 변환하므로 주문 처리/UI는 그대로 사용한다. 기존 경로는 `--speech-backend legacy`로 보존된다.
+
+RTX 5090에서는 BF16이 아니라 NVFP4 체크포인트를 사용한다. 현재 환경은 `vllm download-kernels`로 CUDA 13.0용 FlashInfer 사전 빌드 커널을 설치해 사용한다. ReplaySSM 커널 일부는 첫 실행에 JIT 컴파일되므로, 서버 스크립트는 PyTorch와 동일한 CUDA 13.0 `nvcc`만 사용하도록 검사한다.
+
+```bash
+# 1. 큰 체크포인트 다운로드(한 번만 실행)
+bash scripts/download_nemotron35.sh
+
+# 2. 별도 터미널에서 OpenAI 호환 Nemotron 서버 실행
+bash scripts/start_nemotron35_5090.sh
+
+# 3. 우선 한 샘플에서 음성 단계만 확인
+python -m drive_order audio \
+  --input /path/to/mixture.wav \
+  --menu examples/menu.json \
+  --output results/nemotron35_one \
+  --speech-backend nemotron35 \
+  --nemotron-max-speakers 2 \
+  --skip-orders
+
+# 4. 선별한 15개 2화자 샘플의 화자 permutation 보정 CER·메뉴 recall·RTF 측정
+python scripts/evaluate_nemotron35.py \
+  --manifest /home/yubin/workspace/Hyundai/aihub_menu_order/manifests/demo_2spk_context_overlap25_15.jsonl \
+  --output results/nemotron35_demo15
+```
+
+5090 32 GB에서는 비교 실험 중 Nemotron 서버가 GPU 대부분을 사용하므로 처음에는 반드시 `--skip-orders`로 음성 성능만 측정한다. 전체 주문 처리는 Nemotron 서버를 종료한 뒤 `replay`로 Qwen을 실행하거나, 두 모델이 동시에 적재되도록 별도 양자화/메모리 프로파일을 검증해야 한다. 서버 스크립트의 8,192 토큰·동시 요청 1개·최대 120초 설정은 짧은 공모전 데모용 시작값이며 장시간 녹음용 검증값이 아니다.
 
 ## 목적지 메뉴
 

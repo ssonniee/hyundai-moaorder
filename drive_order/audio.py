@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -25,7 +26,16 @@ def release(model):
 def normalize(source, target, channel=0):
     if channel < 0:
         raise ValueError('channel must be nonnegative')
-    subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', str(source),
+    ffmpeg = shutil.which('ffmpeg')
+    if ffmpeg is None:
+        try:
+            import imageio_ffmpeg
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        except (ImportError, RuntimeError) as exc:
+            raise RuntimeError(
+                'ffmpeg is required to decode browser recordings; install ffmpeg or imageio-ffmpeg'
+            ) from exc
+    subprocess.run([ffmpeg, '-nostdin', '-v', 'error', '-y', '-i', str(source),
         '-af', f'pan=mono|c0=c{channel}', '-ar', '16000', '-c:a', 'pcm_s16le', str(target)], check=True)
     if sf.info(target).duration <= 0:
         raise ValueError('Empty recording')

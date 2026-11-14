@@ -5,7 +5,8 @@ import unittest
 import numpy as np
 
 from drive_order.audio import assign_sources, runs, splice_overlap, prepare_clips
-from drive_order.orders import OrderBook, validate_menu
+from drive_order.nemotron35 import transcription_prompt, turns_from_response
+from drive_order.orders import HybridInterpreter, OrderBook, RuleBasedInterpreter, validate_menu
 from drive_order.trip import validate_trip
 
 MENU = {'store_id': 'one', 'items': [{'id': 'curry', 'name': '카레'}, {'id': 'cola', 'name': '콜라'}]}
@@ -53,7 +54,9 @@ class PipelineTests(unittest.TestCase):
         book.consume(self.turn(3))
         self.assertEqual(book.orders['speaker_0'], [{'menu_id': 'cola', 'quantity': 2, 'options': []}])
         self.assertEqual(book.orders['speaker_1'], [{'menu_id': 'cola', 'quantity': 1, 'options': []}])
-        book.consume(self.turn(4))
+        cancel = self.turn(4)
+        cancel['text'] = '전부 취소요'
+        book.consume(cancel)
         self.assertEqual(book.orders['speaker_0'], [])
         self.assertEqual(len(Path(self.temp.name, 'order_events.jsonl').read_text().splitlines()), 4)
 
@@ -122,6 +125,148 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(saved['status'], 'needs_confirmation')
         self.assertEqual(saved['overlap_confirmation_count'], 1)
 
+    def test_rule_parser_recovers_unique_typo_and_multiple_quantities(self):
+        menu = {'store_id': 'restaurant', 'items': [
+            {'id': 'maze', 'name': '마제소바', 'aliases': ['마제 소바']},
+            {'id': 'katsu', 'name': '가츠동', 'aliases': ['카츠동', '가쓰동']},
+        ]}
+        book = OrderBook(menu, RuleBasedInterpreter(), self.temp.name)
+        turn = self.turn(1, overlap=True)
+        turn['text'] = '마제소보 한 개랑 가츠동 두 개 주세요'
+        event = book.consume(turn)
+        self.assertEqual(book.orders['speaker_0'], [
+            {'menu_id': 'maze', 'quantity': 1, 'options': []},
+            {'menu_id': 'katsu', 'quantity': 2, 'options': []},
+        ])
+        self.assertTrue(event['requires_confirmation'])
+        self.assertTrue(event['decision']['needs_confirmation'])
+
+    def test_rule_parser_does_not_invent_severely_corrupted_menu(self):
+        menu = {'store_id': 'restaurant', 'items': [
+            {'id': 'maze', 'name': '마제소바'}, {'id': 'katsu', 'name': '가츠동'}]}
+        book = OrderBook(menu, RuleBasedInterpreter(), self.temp.name)
+        turn = self.turn(1)
+        turn['text'] = '마제소바 한 개랑 같은 돈 두 개예요'
+        book.consume(turn)
+        self.assertEqual(book.orders['speaker_0'], [
+            {'menu_id': 'maze', 'quantity': 1, 'options': []}])
+
+    def test_rule_parser_handles_exact_orders_and_ignores_questions(self):
+        menu = {'store_id': 'burger', 'items': [
+            {'id': 'shrimp', 'name': '슈슈버거 세트', 'aliases': ['슈슈 버거 세트']},
+            {'id': 'bigmac', 'name': '빅맥 세트'},
+        ]}
+        book = OrderBook(menu, RuleBasedInterpreter(), self.temp.name)
+        exact = self.turn(1)
+        exact['text'] = '슈슈버거 세트 하나랑 빅맥 세트 두 개 주세요'
+        book.consume(exact)
+        self.assertEqual(book.orders['speaker_0'], [
+            {'menu_id': 'shrimp', 'quantity': 1, 'options': []},
+            {'menu_id': 'bigmac', 'quantity': 2, 'options': []},
+        ])
+        question = self.turn(2, speaker='speaker_1')
+        question['text'] = '빅맥 세트 얼마예요?'
+        event = book.consume(question)
+        self.assertEqual(event['decision']['action'], 'noop')
+        self.assertNotIn('speaker_1', book.orders)
+
+    def test_hybrid_uses_rules_then_llm_for_implicit_correction(self):
+        menu = {'store_id': 'burger', 'items': [
+            {'id': 'bigmac', 'name': '빅맥 세트'},
+            {'id': 'shrimp', 'name': '슈슈버거 세트'},
+        ]}
+        llm_payloads = []
+        def llm(payload):
+            llm_payloads.append(payload)
+            return self.decision([
+                {'op': 'remove', 'menu_id': 'bigmac'},
+                self.item('shrimp'),
+            ])
+        hybrid = HybridInterpreter(lambda: llm)
+        book = OrderBook(menu, hybrid, self.temp.name)
+        first = self.turn(1)
+        first['text'] = '빅맥 세트 하나랑요.'
+        book.consume(first)
+        self.assertEqual(book.orders['speaker_0'], [
+            {'menu_id': 'bigmac', 'quantity': 1, 'options': []}])
+        self.assertEqual(hybrid.rule_calls, 1)
+        self.assertEqual(hybrid.llm_calls, 0)
+
+        correction = self.turn(2)
+        correction['text'] = '아니다 그냥 슈비버거 세트로 주세요.'
+        event = book.consume(correction)
+        self.assertEqual(book.orders['speaker_0'], [
+            {'menu_id': 'shrimp', 'quantity': 1, 'options': []}])
+        self.assertEqual(hybrid.llm_calls, 1)
+        self.assertEqual(llm_payloads[0]['previous_items'][0]['menu_id'], 'bigmac')
+        self.assertEqual(llm_payloads[0]['grounded_menu_mentions'][0]['menu_id'], 'shrimp')
+        self.assertTrue(event['requires_confirmation'])  # fuzzy ASR/menu match
+
+    def test_validator_infers_single_previous_item_replacement(self):
+        menu = {'store_id': 'burger', 'items': [
+            {'id': 'bigmac', 'name': '빅맥 세트'},
+            {'id': 'shrimp', 'name': '슈슈버거 세트'},
+        ]}
+        responses = iter([self.decision([self.item('bigmac')]),
+                          self.decision([self.item('shrimp')])])
+        book = OrderBook(menu, lambda payload: next(responses), self.temp.name)
+        first = self.turn(1)
+        first['text'] = '빅맥 세트 하나 주세요'
+        book.consume(first)
+        correction = self.turn(2)
+        correction['text'] = '아니다 그냥 슈슈버거 세트로 주세요'
+        book.consume(correction)
+        self.assertEqual(book.orders['speaker_0'], [
+            {'menu_id': 'shrimp', 'quantity': 1, 'options': []}])
+
+    def test_validator_discards_menu_abandoned_within_same_utterance(self):
+        menu = {'store_id': 'burger', 'items': [
+            {'id': 'bigmac', 'name': '빅맥 세트'},
+            {'id': 'shrimp', 'name': '슈슈버거 세트'},
+        ]}
+        raw = self.decision([self.item('bigmac'), self.item('shrimp')])
+        book = OrderBook(menu, lambda payload: raw, self.temp.name)
+        turn = self.turn(1)
+        turn['text'] = '빅맥 세트 하나요. 아니다 그냥 슈슈버거 세트로 주세요'
+        event = book.consume(turn)
+        self.assertEqual(book.orders['speaker_0'], [
+            {'menu_id': 'shrimp', 'quantity': 1, 'options': []}])
+        self.assertEqual([op['menu_id'] for op in event['raw_decision']['operations']],
+                         ['bigmac', 'shrimp'])
+        self.assertEqual([op['menu_id'] for op in event['decision']['operations']], ['shrimp'])
+
+    def test_validator_rejects_ambiguous_implicit_replacement(self):
+        menu = {'store_id': 'burger', 'items': [
+            {'id': 'bigmac', 'name': '빅맥 세트'},
+            {'id': 'shrimp', 'name': '슈슈버거 세트'},
+            {'id': 'bulgogi', 'name': '불고기 버거 세트'},
+        ]}
+        responses = iter([self.decision([self.item('bigmac'), self.item('shrimp')]),
+                          self.decision([self.item('bulgogi')])])
+        book = OrderBook(menu, lambda payload: next(responses), self.temp.name)
+        first = self.turn(1)
+        first['text'] = '빅맥 세트 하나랑 슈슈버거 세트 하나 주세요'
+        book.consume(first)
+        before = json.loads(json.dumps(book.orders))
+        correction = self.turn(2)
+        correction['text'] = '아니다 그냥 불고기 버거 세트로 주세요'
+        event = book.consume(correction)
+        self.assertEqual(event['decision']['action'], 'clarify')
+        self.assertEqual(book.orders, before)
+
+    def test_validator_keeps_grounded_items_when_one_llm_item_is_unsupported(self):
+        menu = {'store_id': 'restaurant', 'items': [
+            {'id': 'maze', 'name': '마제소바'}, {'id': 'pork', 'name': '돈카츠'}]}
+        decision = self.decision([self.item('maze'), self.item('pork', 2)])
+        book = OrderBook(menu, lambda payload: decision, self.temp.name)
+        turn = self.turn(1)
+        turn['text'] = '마제소바 한 개랑 같은 돈 두 개예요'
+        event = book.consume(turn)
+        self.assertEqual(book.orders['speaker_0'], [
+            {'menu_id': 'maze', 'quantity': 1, 'options': []}])
+        self.assertTrue(event['requires_confirmation'])
+        self.assertEqual(event['decision']['rejected_operations'][0]['operation']['menu_id'], 'pork')
+
     def test_add_and_remove_preserve_other_items(self):
         responses = iter([self.decision([self.item('curry'), self.item('cola')]),
             self.decision([dict(self.item('cola', 2), op='add')]),
@@ -162,6 +307,43 @@ class PipelineTests(unittest.TestCase):
         result = splice_overlap(mix, source, active, 0)
         np.testing.assert_array_equal(result[:4000], mix[:4000])
         np.testing.assert_array_equal(result[-4000:], mix[-4000:])
+
+    def test_nemotron35_words_become_speaker_turns(self):
+        response = {
+            'choices': [{'finish_reason': 'stop', 'message': {'content':
+                '<spk:0> 아메리카노 하나 <spk:1> 라떼 두 잔'}}],
+            'ctc_timestamps': {
+                'error': None,
+                'words': [
+                    {'word': '아메리카노', 'start': .2, 'end': .8, 'speaker': '0'},
+                    {'word': '하나', 'start': .9, 'end': 1.2, 'speaker': '0'},
+                    {'word': '라떼', 'start': .7, 'end': 1.1, 'speaker': '1'},
+                    {'word': '두 잔', 'start': 1.2, 'end': 1.7, 'speaker': '1'},
+                ],
+                'diarization': [
+                    {'speaker': 0, 'start': .1, 'end': 1.3},
+                    {'speaker': 1, 'start': .6, 'end': 1.8},
+                ],
+                'speaker_tag_to_diarization_speaker': {'0': 0, '1': 1},
+            },
+        }
+        turns, diarization = turns_from_response(response)
+        self.assertEqual([turn['speaker'] for turn in turns], ['speaker_0', 'speaker_1'])
+        self.assertEqual(turns[0]['text'], '아메리카노 하나')
+        self.assertEqual(turns[1]['text'], '라떼 두 잔')
+        self.assertTrue(all(turn['overlap'] for turn in turns))
+        self.assertEqual(len(diarization), 2)
+
+    def test_nemotron35_requires_successful_alignment(self):
+        with self.assertRaises(RuntimeError):
+            turns_from_response({'choices': [{'message': {'content': '말'}}],
+                                 'ctc_timestamps': {'error': 'alignment_failed'}})
+
+    def test_nemotron35_prompt_includes_menu_without_claiming_it_was_spoken(self):
+        prompt = transcription_prompt(MENU, max_speakers=2)
+        self.assertIn('<spk:0> <spk:1>', prompt)
+        self.assertIn('카레, 콜라', prompt)
+        self.assertIn('use only when spoken', prompt)
 
     def test_trip_rejects_wrong_branch_and_invalid_coordinates(self):
         t = {'session_id': 's', 'destination': {'store_id': 'wrong', 'name': '식당', 'latitude': 37, 'longitude': 127}}

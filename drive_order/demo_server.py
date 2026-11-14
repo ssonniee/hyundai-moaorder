@@ -28,8 +28,14 @@ MIME = {'audio/webm': 'webm', 'audio/ogg': 'ogg', 'audio/mp4': 'm4a', 'audio/wav
 
 
 class Demo:
-    def __init__(self, data, runner=None, device='cuda', asr='whisper', separator='sepformer'):
+    def __init__(self, data, runner=None, device='cuda', asr='whisper', separator='sepformer',
+                 speech_backend='legacy', nemotron_url='http://127.0.0.1:8000/v1',
+                 transcript_only=False, llm=None, order_backend='llm'):
         self.device, self.asr, self.separator = device, asr, separator
+        self.speech_backend, self.nemotron_url = speech_backend, nemotron_url
+        self.transcript_only = transcript_only
+        self.llm = Path(llm or ROOT/'models/Qwen3-4B-Instruct-2507')
+        self.order_backend = order_backend
         self.data = Path(data)
         self.data.mkdir(parents=True, exist_ok=True)
         self.stores = {s['id']: s for s in json.loads((ROOT/'demo/stores.json').read_text())}
@@ -60,10 +66,18 @@ class Demo:
         dump(self.data / state['id'] / 'session.json', state)
 
     async def config(self, request):
-        return web.json_response({'ready': all((ROOT/'models'/m/'config.json').exists() for m in
-            ['whisper-large-v3-turbo', 'Qwen3-4B-Instruct-2507']),
+        models_ready = (self.transcript_only or self.order_backend == 'rules'
+                        or (self.llm/'config.json').is_file())
+        if self.speech_backend == 'legacy':
+            models_ready = models_ready and (ROOT/'models/whisper-large-v3-turbo/config.json').is_file()
+        return web.json_response({'ready': models_ready,
             'max_minutes': 60, 'max_chunk_bytes': MAX_CHUNK,
-            'processing': {'location': 'server', 'device': self.device, 'asr': self.asr, 'separator': self.separator},
+            'processing': {'location': 'server', 'device': self.device, 'speech_backend': self.speech_backend,
+                           'asr': 'nemotron35' if self.speech_backend == 'nemotron35' else self.asr,
+                           'separator': self.separator,
+                           'transcript_only': self.transcript_only,
+                           'llm': str(self.llm) if self.order_backend != 'rules' else None,
+                           'order_backend': self.order_backend},
             'stores': list(self.stores.values()),
             'tile_url': os.environ.get('DRIVE_ORDER_TILES', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
             'tile_attribution': os.environ.get('DRIVE_ORDER_TILE_ATTRIBUTION', '© OpenStreetMap contributors')})
@@ -219,14 +233,19 @@ class Demo:
         folder = self.data/state['id']
         env = dict(os.environ)
         env['PYTHONPATH'] = os.pathsep.join([str(ROOT/'.deps'), str(ROOT.parent/'Nemotron-ASR/Speech'), str(ROOT)])
-        proc = await asyncio.create_subprocess_exec(sys.executable, '-u', '-m', 'drive_order', 'audio',
+        command = [sys.executable, '-u', '-m', 'drive_order', 'audio',
             '--input', str(recording), '--menu', str(folder/'menu.json'), '--trip', str(folder/'trip.json'),
-            '--device', self.device, '--asr', self.asr, '--separator', self.separator,
-            '--output', str(output), cwd=ROOT, env=env, stdout=asyncio.subprocess.PIPE,
+            '--device', self.device, '--speech-backend', self.speech_backend,
+            '--asr', self.asr, '--separator', self.separator, '--nemotron-url', self.nemotron_url,
+            '--llm', str(self.llm), '--order-backend', self.order_backend, '--output', str(output)]
+        if self.transcript_only:
+            command.append('--skip-orders')
+        proc = await asyncio.create_subprocess_exec(*command, cwd=ROOT, env=env, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT, start_new_session=True, limit=1024*1024)
         phases = {'Streaming diarization': '누가 언제 말했는지 찾고 있습니다',
                   'Preparing speaker clips': '겹친 목소리를 나누고 있습니다',
                   'Korean ASR': '화자별 대화를 글로 옮기고 있습니다',
+                  'Nemotron 3.5': '사람별 대화를 글로 옮기고 있습니다',
                   'Interpreting order changes': '메뉴 선택과 변경 내용을 정리하고 있습니다'}
         try:
             with (folder/f"analysis_{state['attempt']:03d}.log").open('wb') as log:
@@ -238,6 +257,11 @@ class Demo:
                             self.save(state)
             if await proc.wait():
                 raise RuntimeError('음성 처리 엔진 오류. 해당 녹음 폴더의 분석 로그를 확인해 주세요.')
+            if self.transcript_only:
+                menu = json.loads((folder/'menu.json').read_text(encoding='utf-8-sig'))
+                dump(output/'orders.json', {'store_id': menu['store_id'], 'status': 'draft',
+                    'review_count': 0, 'overlap_confirmation_count': 0, 'speakers': {}})
+                (output/'order_events.jsonl').touch(exist_ok=True)
         finally:
             if proc.returncode is None:
                 os.killpg(proc.pid, signal.SIGTERM)
@@ -337,8 +361,11 @@ async def guard(request, handler):
     return response
 
 
-def create_app(data=None, runner=None, *, device='cuda', asr='whisper', separator='sepformer', allowed_hosts=()):
-    demo = Demo(data or ROOT/'demo/sessions', runner, device, asr, separator)
+def create_app(data=None, runner=None, *, device='cuda', asr='whisper', separator='sepformer',
+               speech_backend='legacy', nemotron_url='http://127.0.0.1:8000/v1', allowed_hosts=(),
+               transcript_only=False, llm=None, order_backend='llm'):
+    demo = Demo(data or ROOT/'demo/sessions', runner, device, asr, separator, speech_backend,
+                nemotron_url, transcript_only, llm, order_backend)
     app = web.Application(middlewares=[guard], client_max_size=MAX_CHUNK)
     app['demo'] = demo
     app['allowed_hosts'] = frozenset(h.lower() for h in allowed_hosts)
@@ -364,6 +391,13 @@ if __name__ == '__main__':
     parser.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
     parser.add_argument('--asr', choices=['whisper', 'nemo'], default='whisper')
     parser.add_argument('--separator', choices=['sepformer', 'convtasnet', 'none'], default='sepformer')
+    parser.add_argument('--speech-backend', choices=['legacy', 'nemotron35'], default='legacy')
+    parser.add_argument('--nemotron-url', default=os.environ.get('DRIVE_ORDER_NEMOTRON_URL', 'http://127.0.0.1:8000/v1'))
+    parser.add_argument('--transcript-only', action='store_true',
+                        help='Show speaker-attributed transcripts without loading the order LLM')
+    parser.add_argument('--llm', type=Path, default=ROOT/'models/Qwen3-4B-Instruct-2507',
+                        help='Local order interpretation model; CPU mode is supported')
+    parser.add_argument('--order-backend', choices=['llm', 'rules', 'hybrid'], default='llm')
     parser.add_argument('--data', type=Path)
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--public-host', help='Explicit phone-facing hostname or IPv4 address, without scheme/port')
@@ -384,7 +418,10 @@ if __name__ == '__main__':
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.load_cert_chain(args.tls_cert, args.tls_key)
     app = create_app(args.data, device=args.device, asr=args.asr, separator=args.separator,
-                     allowed_hosts=[args.public_host] if args.public_host else [])
+                     speech_backend=args.speech_backend, nemotron_url=args.nemotron_url,
+                     allowed_hosts=[args.public_host] if args.public_host else [],
+                     transcript_only=args.transcript_only, llm=args.llm,
+                     order_backend=args.order_backend)
     print('\n모아오더 직접 녹음 데모', flush=True)
     print('이 PC의 Chrome 또는 Edge에서 아래 전체 주소를 열어 주세요:', flush=True)
     primary_scheme = 'https' if tls and not args.phone_port else 'http'

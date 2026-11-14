@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import time
 from pathlib import Path
 
@@ -20,14 +21,25 @@ def main():
         p.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
         p.add_argument('--llm', default=str(root / 'models/Qwen3-4B-Instruct-2507'))
         p.add_argument('--int4', action='store_true', help='Requires bitsandbytes; optional deployment experiment')
+        p.add_argument('--order-backend', choices=['llm', 'rules', 'hybrid'], default='llm',
+                       help='hybrid uses rules for simple orders and lazily loads the LLM for stateful intent')
         if name == 'audio':
             p.add_argument('--channel', type=int, default=0)
             p.add_argument('--threshold', type=float, default=.5)
             p.add_argument('--max-seconds', type=float, default=20)
+            p.add_argument('--speech-backend', choices=['legacy', 'nemotron35'], default='legacy',
+                           help='legacy: diarization + separator + ASR; nemotron35: direct speaker-attributed ASR')
             p.add_argument('--separator', choices=['sepformer', 'convtasnet', 'none'], default='sepformer')
             p.add_argument('--separator-python', default='/home/ssonniee/anaconda3/envs/diarizen/bin/python')
             p.add_argument('--sepformer-model', choices=['sepformer-wsj02mix', 'sepformer-whamr'], default='sepformer-wsj02mix')
             p.add_argument('--asr', choices=['nemo', 'whisper'], default='whisper')
+            p.add_argument('--nemotron-url', default=os.environ.get('DRIVE_ORDER_NEMOTRON_URL', 'http://127.0.0.1:8000/v1'))
+            p.add_argument('--nemotron-model', default=os.environ.get(
+                'DRIVE_ORDER_NEMOTRON_MODEL',
+                'nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-NVFP4'))
+            p.add_argument('--nemotron-api-key', default=os.environ.get('DRIVE_ORDER_NEMOTRON_API_KEY', 'EMPTY'))
+            p.add_argument('--nemotron-max-speakers', type=int, choices=range(1, 9), default=4)
+            p.add_argument('--nemotron-max-tokens', type=int, default=4096)
             p.add_argument('--skip-orders', action='store_true', help='Audio stages only; no order claims')
     args = parser.parse_args()
     if not args.input.is_file():
@@ -46,7 +58,8 @@ def main():
         dump(args.output / 'trip.json', trip)
         dump(args.output / 'navigation_request.json', route)
     started = time.monotonic()
-    metrics = {'mode': args.command, 'device': args.device, 'llm': args.llm,
+    metrics = {'mode': args.command, 'device': args.device,
+               'llm': args.llm if args.order_backend != 'rules' else None,
                'input': str(args.input.resolve()), 'status': 'running', 'stages_seconds': {}}
     import torch
     torch.set_num_threads(4)
@@ -54,37 +67,59 @@ def main():
         torch.cuda.reset_peak_memory_stats()
     try:
         if args.command == 'audio':
-            metrics['separator_kind'] = args.separator
-            from .audio import diarize, normalize, prepare_clips, transcribe
+            metrics['speech_backend'] = args.speech_backend
+            metrics['separator_kind'] = args.separator if args.speech_backend == 'legacy' else None
+            from .audio import normalize
             import soundfile as sf
             normal = args.output / 'audio_16k.wav'
             t = time.monotonic()
             normalize(args.input, normal, args.channel)
             metrics['audio_seconds'] = sf.info(normal).duration
             metrics['stages_seconds']['normalize'] = time.monotonic()-t
-            t = time.monotonic()
-            print('Streaming diarization...', flush=True)
-            probs = diarize(normal, args.output, args.device, args.threshold)
-            metrics['stages_seconds']['diarization'] = time.monotonic()-t
-            t = time.monotonic()
-            print('Preparing speaker clips / separating overlaps...', flush=True)
-            clips = prepare_clips(normal, probs, args.output, root / 'models',
-                                  args.device, args.threshold, args.max_seconds, args.separator, args.separator_python,
-                                  args.sepformer_model)
-            dump(args.output / 'clips.json', clips)
-            metrics['stages_seconds']['separation'] = time.monotonic()-t
-            t = time.monotonic()
-            print('Korean ASR...', flush=True)
-            transcribe(clips, args.output, args.device, args.asr, root / 'models', menu)
-            metrics['asr_backend'] = args.asr
-            metrics['stages_seconds']['asr'] = time.monotonic()-t
+            if args.speech_backend == 'nemotron35':
+                from .nemotron35 import write_transcription
+                t = time.monotonic()
+                print('Nemotron 3.5 speaker-attributed transcription...', flush=True)
+                write_transcription(normal, args.output, menu,
+                    base_url=args.nemotron_url, model=args.nemotron_model,
+                    api_key=args.nemotron_api_key, max_speakers=args.nemotron_max_speakers,
+                    max_tokens=args.nemotron_max_tokens)
+                metrics['asr_backend'] = 'nemotron35'
+                metrics['stages_seconds']['nemotron35'] = time.monotonic()-t
+            else:
+                from .audio import diarize, prepare_clips, transcribe
+                t = time.monotonic()
+                print('Streaming diarization...', flush=True)
+                probs = diarize(normal, args.output, args.device, args.threshold)
+                metrics['stages_seconds']['diarization'] = time.monotonic()-t
+                t = time.monotonic()
+                print('Preparing speaker clips / separating overlaps...', flush=True)
+                clips = prepare_clips(normal, probs, args.output, root / 'models',
+                                      args.device, args.threshold, args.max_seconds, args.separator, args.separator_python,
+                                      args.sepformer_model)
+                dump(args.output / 'clips.json', clips)
+                metrics['stages_seconds']['separation'] = time.monotonic()-t
+                t = time.monotonic()
+                print('Korean ASR...', flush=True)
+                transcribe(clips, args.output, args.device, args.asr, root / 'models', menu)
+                metrics['asr_backend'] = args.asr
+                metrics['stages_seconds']['asr'] = time.monotonic()-t
             source = args.output / 'utterances.jsonl'
         else:
             source = args.input
         if not getattr(args, 'skip_orders', False):
             t = time.monotonic()
             print('Interpreting order changes...', flush=True)
-            interpreter = LocalLLM(args.llm, args.device, args.int4)
+            if args.order_backend == 'rules':
+                from .orders import RuleBasedInterpreter
+                interpreter = RuleBasedInterpreter()
+            elif args.order_backend == 'hybrid':
+                from .orders import HybridInterpreter
+                interpreter = HybridInterpreter(
+                    lambda: LocalLLM(args.llm, args.device, args.int4))
+            else:
+                interpreter = LocalLLM(args.llm, args.device, args.int4)
+            metrics['order_backend'] = args.order_backend
             book = OrderBook(menu, interpreter, args.output)
             count = 0
             with source.open(encoding='utf-8-sig') as f:
@@ -98,6 +133,9 @@ def main():
                         print(json.dumps(event['decision'], ensure_ascii=False), flush=True)
             book.save()
             metrics.update(utterance_count=count, review_count=book.review_count)
+            if args.order_backend == 'hybrid':
+                metrics.update(rule_interpreter_calls=interpreter.rule_calls,
+                               llm_interpreter_calls=interpreter.llm_calls)
             metrics['stages_seconds']['orders'] = time.monotonic()-t
         metrics['status'] = 'complete'
     except Exception as exc:
