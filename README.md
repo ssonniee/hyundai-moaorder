@@ -144,3 +144,8 @@ LLM은 주문표를 통째로 덮어쓰지 않고 `set`, `add`, `remove`, `clear
 최종 실행은 `results/final_text`, `results/final_long`, `results/final_overlap`이다. `results/validation.json`에서 실행 성공과 정확도 통과를 구분한다. `scripts/evaluate_results.py --require-overlap`은 겹침의 전체 주문 복원이 실패하면 종료 코드 1을 반환한다. 실행이 정상 종료했다고 정확도 검증도 통과한 것으로 처리하지 않는다.
 
 검증 상세와 남은 작업은 `VALIDATION.md`에 정리했다.
+
+
+## 시연 영상
+
+[▶ Moaorder 시연 영상 보기](https://youtu.be/Sa-5V4HNdrk)
