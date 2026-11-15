@@ -1,4 +1,4 @@
-"""Download only the default LLM; existing NVIDIA checkpoints are reused when cached."""
+"""Download the three default models needed by the web server."""
 from pathlib import Path
 from huggingface_hub import snapshot_download
 
@@ -9,4 +9,4 @@ snapshot_download('nvidia/Nemotron-3-Diarization',
     allow_patterns=['*.json', '*.safetensors'])
 snapshot_download('openai/whisper-large-v3-turbo', local_dir=root / 'models/whisper-large-v3-turbo',
     allow_patterns=['*.json', '*.safetensors', '*.txt', '*.tiktoken', 'README.md'])
-# ASRModel.from_pretrained and the SpeechBrain worker fetch their weights on first use.
+# The SpeechBrain worker fetches SepFormer weights on first use.

@@ -5,7 +5,7 @@ import json
 import time
 from pathlib import Path
 
-from .orders import LocalLLM, OrderBook, dump, validate_menu
+from .orders import dump, validate_menu
 from .trip import validate_trip
 
 
@@ -21,17 +21,16 @@ def main():
         p.add_argument('--output', type=Path, required=True)
         p.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
         p.add_argument('--llm', default=str(root / 'models/Qwen3-4B-Instruct-2507'))
-        p.add_argument('--int4', action='store_true', help='Requires bitsandbytes; optional deployment experiment')
-        p.add_argument('--order-backend', choices=['qwen', 'llm'], default='qwen')
+        p.add_argument('--order-backend', choices=['qwen'], default='qwen')
         if name == 'audio':
             p.add_argument('--separated-audio', choices=['full', 'splice'], default='full')
             p.add_argument('--channel', type=int, default=0)
             p.add_argument('--threshold', type=float, default=.5)
             p.add_argument('--max-seconds', type=float, default=20)
-            p.add_argument('--separator', choices=['sepformer', 'convtasnet', 'none'], default='sepformer')
+            p.add_argument('--separator', choices=['sepformer', 'none'], default='sepformer')
             p.add_argument('--separator-python', default=os.environ.get('DRIVE_ORDER_SEPARATOR_PYTHON', sys.executable))
             p.add_argument('--sepformer-model', choices=['sepformer-wsj02mix', 'sepformer-whamr'], default='sepformer-wsj02mix')
-            p.add_argument('--asr', choices=['nemo', 'whisper'], default='whisper')
+            p.add_argument('--asr', choices=['whisper'], default='whisper')
             p.add_argument('--skip-orders', action='store_true', help='Audio stages only; no order claims')
     args = parser.parse_args()
     if not args.input.is_file():
@@ -89,14 +88,10 @@ def main():
         if not getattr(args, 'skip_orders', False):
             t = time.monotonic()
             print('Interpreting order changes...', flush=True)
-            book_type = OrderBook
-            if args.order_backend == 'qwen':
-                from .qwen_context import QwenContextInterpreter
-                from .context_orders import ContextOrderBook
-                interpreter = QwenContextInterpreter(args.llm, args.device)
-                book_type = ContextOrderBook
-            else:
-                interpreter = LocalLLM(args.llm, args.device, args.int4)
+            from .qwen_context import QwenContextInterpreter
+            from .context_orders import ContextOrderBook
+            interpreter = QwenContextInterpreter(args.llm, args.device)
+            book_type = ContextOrderBook
             metrics['order_backend'] = args.order_backend
             metrics['llm'] = args.llm
             book = book_type(menu, interpreter, args.output)

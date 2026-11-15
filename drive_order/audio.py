@@ -151,9 +151,10 @@ def prepare_clips(path, probs, output, model_dir, device='cuda', threshold=.5, m
                   separator_kind='sepformer', separator_python=None,
                   sepformer_model='sepformer-wsj02mix', separated_audio='splice'):
     import torch
-    from .vendor.conv_tasnet import conv_tasnet_base
     if not 2 <= max_seconds <= 30:
         raise ValueError('max_seconds must be in [2, 30]')
+    if separator_kind not in {'sepformer', 'none'}:
+        raise ValueError('Only SepFormer is supported')
     separator_python = separator_python or os.environ.get('DRIVE_ORDER_SEPARATOR_PYTHON', sys.executable)
     if separated_audio not in {'splice', 'full'}:
         raise ValueError('Invalid separated_audio mode')
@@ -194,7 +195,6 @@ def prepare_clips(path, probs, output, model_dir, device='cuda', threshold=.5, m
             subprocess.run([separator_python, str(Path(__file__).resolve().parents[1] / 'scripts/separate.py'),
                 '--jobs', str(jobfile.resolve()), '--model-dir', str((model_dir / sepformer_model).resolve()),
                 '--device', device, '--model', sepformer_model], env=env, check=True)
-    separator = None
     clips, index = [], 0
     clip_dir = output / 'clips'
     clip_dir.mkdir()
@@ -214,16 +214,7 @@ def prepare_clips(path, probs, output, model_dir, device='cuda', threshold=.5, m
                 mix = audio.read((b-a)*160, dtype='float32')
                 mapping, separated = None, None
                 if overlap and len(speakers) == 2 and separator_kind != 'none':
-                    if separator_kind == 'sepformer':
-                        separated = np.load(separated_files[begin])
-                    else:
-                        if separator is None:
-                            separator = conv_tasnet_base(num_sources=2)
-                            separator.load_state_dict(torch.load(model_dir / 'conv_tasnet_base_libri2mix.pt', map_location='cpu', weights_only=True))
-                            separator.to(device).eval()
-                        low = resample_poly(mix, 1, 2).astype('float32')
-                        with torch.inference_mode():
-                            separated = separator(torch.from_numpy(low)[None, None].to(device))[0].cpu().numpy()
+                    separated = np.load(separated_files[begin])
                     mapping = assign_sources(separated, mask[:, speakers])
                 for local, speaker in enumerate(speakers):
                     # Per-speaker speech segments remain attributable in chronological order.
@@ -253,23 +244,20 @@ def prepare_clips(path, probs, output, model_dir, device='cuda', threshold=.5, m
                             'overlap': overlap, 'method': method, 'needs_review': needs_review,
                             'review_reason': 'chunk_boundary' if forced_cut else ('speaker_assignment' if needs_review else None),
                             'audio_path': str(clip.resolve())})
-    del separator
     release(None)
     return sorted(clips, key=lambda x: (x['start'], x['speaker']))
 
 
-def transcribe(clips, output, device='cuda', backend='nemo', model_dir=None, menu=None):
+def transcribe(clips, output, device='cuda', backend='whisper', model_dir=None, menu=None):
+    if backend != 'whisper':
+        raise ValueError('Only Whisper is supported')
     import torch
-    if backend == 'nemo':
-        import nemo.collections.asr as nemo_asr
-        model = nemo_asr.models.ASRModel.from_pretrained('nvidia/nemotron-3.5-asr-streaming-0.6b', map_location=device)
-    else:
-        from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
-        processor = AutoProcessor.from_pretrained(model_dir / 'whisper-large-v3-turbo')
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(model_dir / 'whisper-large-v3-turbo',
-            dtype=torch.float16 if device == 'cuda' else torch.float32).to(device)
-        hint = ', '.join(item['name'] for item in (menu or {}).get('items', []))[:500]
-        prompt_ids = processor.get_prompt_ids('식당 메뉴: ' + hint, return_tensors='pt').to(device) if hint else None
+    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+    processor = AutoProcessor.from_pretrained(model_dir / 'whisper-large-v3-turbo')
+    model = AutoModelForSpeechSeq2Seq.from_pretrained(model_dir / 'whisper-large-v3-turbo',
+        dtype=torch.float16 if device == 'cuda' else torch.float32).to(device)
+    hint = ', '.join(item['name'] for item in (menu or {}).get('items', []))[:500]
+    prompt_ids = processor.get_prompt_ids('식당 메뉴: ' + hint, return_tensors='pt').to(device) if hint else None
     model.eval()
     speaker_dir = output / 'speakers'
     speaker_dir.mkdir(exist_ok=True)
@@ -277,20 +265,13 @@ def transcribe(clips, output, device='cuda', backend='nemo', model_dir=None, men
     with (output / 'utterances.jsonl').open('w', encoding='utf-8') as f:
         for clip in clips:
             with torch.inference_mode():
-                if backend == 'nemo':
-                    predictions = model.transcribe([clip['audio_path']], batch_size=1,
-                        target_lang='ko-KR', num_workers=0, verbose=False)
-                    if isinstance(predictions, tuple):
-                        predictions = predictions[0]
-                    text = predictions[0] if isinstance(predictions[0], str) else predictions[0].text
-                else:
-                    wave, _ = sf.read(clip['audio_path'], dtype='float32')
-                    inputs = processor(wave, sampling_rate=16000, return_tensors='pt',
-                        return_attention_mask=True).to(device, dtype=model.dtype)
-                    ids = model.generate(**inputs, language='korean', task='transcribe',
-                        max_new_tokens=256, do_sample=False, prompt_ids=prompt_ids)
-                    text = processor.batch_decode(ids, skip_special_tokens=True)[0]
-                    del inputs, ids
+                wave, _ = sf.read(clip['audio_path'], dtype='float32')
+                inputs = processor(wave, sampling_rate=16000, return_tensors='pt',
+                    return_attention_mask=True).to(device, dtype=model.dtype)
+                ids = model.generate(**inputs, language='korean', task='transcribe',
+                    max_new_tokens=256, do_sample=False, prompt_ids=prompt_ids)
+                text = processor.batch_decode(ids, skip_special_tokens=True)[0]
+                del inputs, ids
             turn = dict(clip, text=re.sub(r'<[a-z]{2}-[A-Z]{2}>', '', text).strip(), asr_backend=backend)
             if not turn['text']:
                 turn.update(needs_review=True, review_reason='empty_asr_on_detected_speech')

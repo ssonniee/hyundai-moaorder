@@ -24,7 +24,7 @@ python -c "import torch; print(torch.cuda.is_available())"
 
 ## 2. 음원분리 환경
 
-NeMo와 SpeechBrain의 의존성을 분리합니다. 아래 PyTorch 조합은 개발 서버에서 사용한 CUDA 12.8 조합이며, 서버 드라이버가 이를 지원해야 합니다.
+주 처리 환경과 SpeechBrain의 의존성을 분리합니다. 아래 PyTorch 조합은 개발 서버에서 사용한 CUDA 12.8 조합이며, 서버 드라이버가 이를 지원해야 합니다.
 
 ```bash
 python3.11 -m venv .venv-separator
@@ -58,14 +58,7 @@ bash demo.sh --public-host YOUR_HTTPS_HOST
 
 매장 목록은 `demo/stores.json`에 있습니다. 각 메뉴의 `aliases`에 매장별 별칭을 추가할 수 있습니다. 서버를 재시작하면 목록을 다시 읽습니다.
 
-텍스트만으로 주문 해석을 확인할 수 있습니다.
-
-```bash
-bash run.sh replay --input examples/order_changes.jsonl --menu examples/menu.json --output results/text_test
-python -m unittest discover -s tests
-```
-
-결과 폴더는 매번 새 이름을 사용합니다. 기본은 Qwen 문맥 검증 + 별칭·오타 후보 보조이며, 녹음 원문을 덮어쓰지 않습니다.
+웹에서 목적지를 선택하고 짧게 녹음해 결과를 확인합니다. 기본은 Qwen 문맥 검증 + 별칭·오타 후보 보조이며, 녹음 원문을 덮어쓰지 않습니다.
 
 ## 저장되는 결과
 

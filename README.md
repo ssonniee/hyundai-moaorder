@@ -66,5 +66,3 @@ bash demo.sh
 | `drive_order/` | 서버와 음성·주문 처리 |
 | `demo/` | 웹 화면과 매장 메뉴 |
 | `scripts/` | 모델 다운로드와 음원분리 실행 |
-| `examples/` | 메뉴와 텍스트 입력 예제 |
-| `tests/` | 실행에 필요한 핵심 기능 검사 |
