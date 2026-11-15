@@ -19,29 +19,23 @@
 
 ## 처리 구조
 
-기존 처리 흐름을 기준으로, 음성 분석과 매장 메뉴 정보가 주문 정리 단계에서 만나도록 구성했습니다.
+목적지·메뉴 선택부터 화자별 주문 정리까지의 처리 흐름입니다. FusedLocation과 NaviHelper의 Android 연동은 예정 단계입니다.
 
 ```mermaid
 flowchart LR
-    A["목적지 선택"] --> M["매장 메뉴"]
-    B["주문 대화 녹음"] --> D["Nemotron<br/>누가 언제 말했는지 구분"]
-    D --> H{"동시 발화"}
-    H -->|"없음"| W["Whisper<br/>음성을 텍스트로"]
-    H -->|"두 화자"| S["SepFormer<br/>겹친 목소리 분리"]
-    S --> W
-    M -.->|"메뉴명 힌트"| W
-    W --> T["화자 · 시간 · 발화 저장"]
-    T --> Q["Qwen<br/>주문 추가 · 변경 · 취소 해석"]
-    M --> Q
-    Q --> V["메뉴 · 수량 · 발화 근거 검증"]
-    V --> O["화자별 최종 주문 초안"]
-
-    classDef input fill:#eef3f8,stroke:#96afc7,color:#002c5f;
-    classDef model fill:#002c5f,stroke:#002c5f,color:#fff;
-    classDef output fill:#e6f3f7,stroke:#1674a5,color:#002c5f;
-    class A,B,M input;
-    class D,S,W,Q model;
-    class T,V,O output;
+  A[사용자가 목적지 선택] --> B[지점 ID에 맞는 메뉴 목록]
+  A --> N[NaviHelper Android 연동 예정]
+  L[FusedLocation Android 연동 예정] --> A
+  W[녹음 파일] --> D[Nemotron 스트리밍 화자분리]
+  D --> S{겹침 여부}
+  S -->|없음| R[화자별 ASR]
+  S -->|두 화자| P[SepFormer 음원분리와 화자 대응]
+  P --> R
+  R --> T[화자·시간·발화 원문 저장]
+  B --> Q[Qwen 주문 변경 연산 추출]
+  T --> Q
+  Q --> V[메뉴·증거·수량 검증]
+  V --> O[화자별 주문 초안과 변경 이력]
 ```
 
 | 단계 | 기본 모델 | 역할 |
