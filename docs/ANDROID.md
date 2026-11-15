@@ -1,5 +1,8 @@
 # Android APK 빌드
 
+<details>
+<summary>개발자용 빌드 방법 펼치기</summary>
+
 JDK 17 이상과 Android SDK(Platform 35, Build Tools 35.0.0)가 필요합니다.
 `ANDROID_HOME`을 SDK 설치 경로로 설정하세요.
 
@@ -24,3 +27,5 @@ cp app/build/outputs/apk/release/app-release.apk ../apk/MoaOrder_모아오더_re
 서버 주소를 바꾸려면 `android/app/src/main/java/ai/moaorder/app/MainActivity.java`의 `HOME`과 `HOST`를 함께 수정하고 다시 빌드하세요. 마이크 사용을 위해 유효한 HTTPS 주소가 필요합니다.
 
 모델은 GPU 서버에서 실행됩니다. 서버 구성은 [로컬에서 실행하는 방법](SETUP.md)을 참고하세요. APK에는 API 키나 모델 가중치를 포함하지 않습니다.
+
+</details>
