@@ -28,6 +28,14 @@ See how MoaOrder turns multi-speaker conversations into a clear, organized order
 
 [**서명된 release APK 다운로드 →**](https://github.com/ssonniee/hyundai-moaorder/raw/refs/heads/main/apk/MoaOrder_모아오더_release.apk)
 
+### 설치 및 실행
+
+1. Android 기기에서 위 APK를 내려받아 다운로드한 파일을 열고 설치합니다.
+2. 모아오더를 실행하고 목적지 매장을 선택합니다.
+3. 마이크 권한을 허용한 뒤 녹음하거나 음성 파일을 업로드합니다.
+4. 녹음을 중지하면 서버 분석 후 사람별 최종 주문이 표시됩니다.
+
+### 테스트 환경 및 필요한 설정
 
 | 항목 | 내용 |
 |---|---|
@@ -42,7 +50,12 @@ See how MoaOrder turns multi-speaker conversations into a clear, organized order
 
 (iPhone에서는 Live Web Demo를 이용하세요.)
 
-[APK 빌드 방법](docs/ANDROID.md)
+<details>
+<summary>APK 빌드 방법 · 개발자용</summary>
+
+완성된 APK를 설치할 때는 빌드가 필요하지 않습니다. 소스를 수정해 APK를 다시 만들려면 [빌드 안내](docs/ANDROID.md)를 확인하세요.
+
+</details>
 
 ## 실행 Pipeline
 FusedLocation과 NaviHelper의 Android 연동은 추후 진행 예정.
