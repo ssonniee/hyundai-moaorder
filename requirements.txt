@@ -10,3 +10,6 @@ lm-format-enforcer==0.11.3
 interegular==0.3.3
 aiohttp>=3.9
 # ffmpeg is a system executable. torchaudio is not required by the vendored separator.
+
+# Optional ffmpeg binary fallback for browser recordings.
+imageio-ffmpeg>=0.8

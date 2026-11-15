@@ -4,6 +4,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -25,7 +26,16 @@ def release(model):
 def normalize(source, target, channel=0):
     if channel < 0:
         raise ValueError('channel must be nonnegative')
-    subprocess.run(['ffmpeg', '-nostdin', '-v', 'error', '-y', '-i', str(source),
+    ffmpeg = shutil.which('ffmpeg')
+    if ffmpeg is None:
+        try:
+            import imageio_ffmpeg
+            ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+        except (ImportError, RuntimeError) as exc:
+            raise RuntimeError(
+                'ffmpeg is required to decode browser recordings; install ffmpeg or imageio-ffmpeg'
+            ) from exc
+    subprocess.run([ffmpeg, '-nostdin', '-v', 'error', '-y', '-i', str(source),
         '-af', f'pan=mono|c0=c{channel}', '-ar', '16000', '-c:a', 'pcm_s16le', str(target)], check=True)
     if sf.info(target).duration <= 0:
         raise ValueError('Empty recording')
@@ -114,7 +124,7 @@ def assign_sources(sources, activity, minimum_anchor=20, margin=.20):
     return [votes[0], 1-votes[0]]
 
 
-def splice_overlap(mix, source, activity, speaker):
+def splice_overlap(mix, source, activity, speaker, full_track=False):
     """Preserve original single-speaker audio; use separation only while others speak."""
     from scipy.ndimage import uniform_filter1d
     source = resample_poly(source, 2, 1)[:len(mix)]
@@ -129,6 +139,8 @@ def splice_overlap(mix, source, activity, speaker):
         gain = float(np.dot(s, m) / (np.dot(s, s) + 1e-9))
     else:
         gain = float(np.sqrt(np.mean(mix**2) / (np.mean(source**2) + 1e-9)))
+    if full_track:
+        return source*gain
     weights = np.repeat(other, 160).astype('float32')[:len(mix)]
     weights = uniform_filter1d(weights, size=320, mode='nearest')
     return mix*(1-weights) + source*gain*weights
@@ -136,11 +148,13 @@ def splice_overlap(mix, source, activity, speaker):
 
 def prepare_clips(path, probs, output, model_dir, device='cuda', threshold=.5, max_seconds=20,
                   separator_kind='sepformer', separator_python='/home/ssonniee/anaconda3/envs/diarizen/bin/python',
-                  sepformer_model='sepformer-wsj02mix'):
+                  sepformer_model='sepformer-wsj02mix', separated_audio='splice'):
     import torch
     from .vendor.conv_tasnet import conv_tasnet_base
     if not 2 <= max_seconds <= 30:
         raise ValueError('max_seconds must be in [2, 30]')
+    if separated_audio not in {'splice', 'full'}:
+        raise ValueError('Invalid separated_audio mode')
     active = probs >= threshold
     # Drop isolated very short detections and bridge short intra-speaker gaps.
     cleaned = np.zeros_like(active)
@@ -219,9 +233,9 @@ def prepare_clips(path, probs, output, model_dir, device='cuda', threshold=.5, m
                         start, stop = begin+x, begin+y
                         needs_review = forced_cut or (overlap and mapping is None)
                         if separated is not None and mapping is not None:
-                            track = splice_overlap(mix, separated[mapping[local]], mask, speaker)
+                            track = splice_overlap(mix, separated[mapping[local]], mask, speaker, full_track=True) if separated_audio == 'full' else splice_overlap(mix, separated[mapping[local]], mask, speaker)
                             wave = track[(start-a)*160:(stop-a)*160]
-                            method = separator_kind + '_overlap_splice'
+                            method = separator_kind + ('_full_track' if separated_audio == 'full' else '_overlap_splice')
                         else:
                             wave = mix[(start-a)*160:(stop-a)*160]
                             method = 'unresolved_overlap' if overlap else 'single_speaker'

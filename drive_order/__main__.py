@@ -20,7 +20,9 @@ def main():
         p.add_argument('--device', choices=['cpu', 'cuda'], default='cuda')
         p.add_argument('--llm', default=str(root / 'models/Qwen3-4B-Instruct-2507'))
         p.add_argument('--int4', action='store_true', help='Requires bitsandbytes; optional deployment experiment')
+        p.add_argument('--order-backend', choices=['qwen', 'llm'], default='qwen')
         if name == 'audio':
+            p.add_argument('--separated-audio', choices=['full', 'splice'], default='full')
             p.add_argument('--channel', type=int, default=0)
             p.add_argument('--threshold', type=float, default=.5)
             p.add_argument('--max-seconds', type=float, default=20)
@@ -55,6 +57,7 @@ def main():
     try:
         if args.command == 'audio':
             metrics['separator_kind'] = args.separator
+            metrics['separated_audio'] = args.separated_audio
             from .audio import diarize, normalize, prepare_clips, transcribe
             import soundfile as sf
             normal = args.output / 'audio_16k.wav'
@@ -70,7 +73,7 @@ def main():
             print('Preparing speaker clips / separating overlaps...', flush=True)
             clips = prepare_clips(normal, probs, args.output, root / 'models',
                                   args.device, args.threshold, args.max_seconds, args.separator, args.separator_python,
-                                  args.sepformer_model)
+                                  args.sepformer_model, args.separated_audio)
             dump(args.output / 'clips.json', clips)
             metrics['stages_seconds']['separation'] = time.monotonic()-t
             t = time.monotonic()
@@ -84,8 +87,17 @@ def main():
         if not getattr(args, 'skip_orders', False):
             t = time.monotonic()
             print('Interpreting order changes...', flush=True)
-            interpreter = LocalLLM(args.llm, args.device, args.int4)
-            book = OrderBook(menu, interpreter, args.output)
+            book_type = OrderBook
+            if args.order_backend == 'qwen':
+                from .qwen_context import QwenContextInterpreter
+                from .context_orders import ContextOrderBook
+                interpreter = QwenContextInterpreter(args.llm, args.device)
+                book_type = ContextOrderBook
+            else:
+                interpreter = LocalLLM(args.llm, args.device, args.int4)
+            metrics['order_backend'] = args.order_backend
+            metrics['llm'] = args.llm
+            book = book_type(menu, interpreter, args.output)
             count = 0
             with source.open(encoding='utf-8-sig') as f:
                 for line in f:

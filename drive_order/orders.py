@@ -192,30 +192,35 @@ class OrderBook:
                 decision = {'action': 'noop', 'operations': [], 'reason': '인식된 발화 없음'}
             else:
                 own_recent = [r for r in self.recent if r['speaker'] == speaker][-8:]
-                raw = self.interpreter({'menu': {'items': self.menu['items']}, 'previous_items': before,
-                    'recent': own_recent, 'current': {k: turn[k] for k in ('speaker', 'text')}})
-                after = self._apply(raw, before, turn['text'])
-                decision = raw
+                payload = {'menu': self.menu, 'previous_items': before,
+                    'recent': own_recent, 'current': {k: turn[k] for k in ('id', 'speaker', 'text', 'start', 'end')}}
+                if getattr(self.interpreter, 'contextual', False):
+                    payload.update(conversation_recent=copy.deepcopy(self.recent), all_orders=copy.deepcopy(self.orders))
+                raw = self.interpreter(payload)
+                decision = copy.deepcopy(raw)
+                after = self._apply(decision, before, turn['text'])
         except (ValueError, TypeError, KeyError) as exc:
             if isinstance(exc, InvalidLLMOutput):
                 raw = exc.raw
-            decision = {'action': 'clarify', 'operations': [], 'reason': 'LLM output rejected: ' + str(exc)}
+            decision = {'action': 'clarify', 'operations': [], 'reason': 'Order output rejected: ' + str(exc)}
         if decision['action'] == 'update':
             self.orders[speaker] = copy.deepcopy(after)
-        if decision['action'] == 'clarify':
+        if decision['action'] == 'clarify' or decision.get('needs_confirmation', False):
             self.review_count += 1
         if turn.get('overlap', False):
             self.overlap_confirmation_count += 1
         event = {'utterance_id': turn['id'], 'speaker': speaker, 'start': start, 'end': end,
                  'text': turn['text'], 'before': before, 'decision': decision, 'raw_decision': raw,
-                 'requires_confirmation': turn.get('overlap', False) or decision['action'] == 'clarify',
+                 'requires_confirmation': (turn.get('overlap', False) or decision['action'] == 'clarify'
+                                           or decision.get('needs_confirmation', False)),
                  'after': copy.deepcopy(self.orders.get(speaker, []))}
         with (self.output / 'order_events.jsonl').open('a', encoding='utf-8') as f:
             f.write(json.dumps(event, ensure_ascii=False) + '\n')
         self.seen.add(turn['id'])
         # Uncertain transcripts are retained on disk but cannot contaminate later LLM context.
         if speaker and not turn.get('needs_review', False):
-            self.recent = (self.recent + [{k: turn[k] for k in ('id', 'speaker', 'text')}])[-8:]
+            limit = 64 if getattr(self.interpreter, 'contextual', False) else 8
+            self.recent = (self.recent + [{k: turn[k] for k in ('id', 'speaker', 'text', 'start', 'end')}])[-limit:]
         self.save()
         return event
 

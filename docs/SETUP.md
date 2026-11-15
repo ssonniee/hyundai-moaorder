@@ -2,7 +2,7 @@
 
 [프로젝트 소개](../README.md) · [웹 사용 안내](../demo/README.md)
 
-이 문서는 `hyundai-speechorder`를 기반으로 한 저장소의 기준 구현을 설명합니다. 공개 웹 데모는 별도로 운영되는 개선 버전입니다.
+기본 주문 해석은 Qwen3-4B 문맥 검증 + 매장별 별칭·오타 보조 방식입니다. 웹과 CLI 모두 이 구성을 사용합니다.
 
 ## 1. 환경 준비
 
@@ -50,7 +50,7 @@ bash run.sh audio \
 bash demo.sh
 ```
 
-기본 ASR은 Whisper입니다. 선택 옵션 `--asr nemo`는 추가 NVIDIA ASR 모델과 호환 NeMo 환경이 필요합니다. `run.sh`는 인접한 `Nemotron-ASR/Speech` 경로가 있으면 함께 참조합니다.
+기본 ASR은 Whisper입니다. 음원분리 구간은 `--separated-audio full`이 기본이며, `splice`로 겹친 부분만 교체할 수도 있습니다. 주문 해석은 `--order-backend qwen`이 기본이고, `llm`은 기존 LocalLLM 경로입니다. 선택 옵션 `--asr nemo`는 추가 NVIDIA ASR 모델과 호환 NeMo 환경이 필요합니다. `run.sh`는 인접한 `Nemotron-ASR/Speech` 경로가 있으면 함께 참조합니다.
 
 ## 3. 텍스트로 주문 해석만 확인
 
@@ -72,6 +72,7 @@ bash run.sh replay \
 | `utterances.jsonl` | 화자, 시작·종료 시간, 인식된 발화 |
 | `orders.json` | 화자별 최신 주문 초안 |
 | `order_events.jsonl` | 변경 근거와 적용 전·후 주문 |
+| `menu_postprocessing.jsonl` | 원문, 매장별 별칭·오타 후보와 판단 기록 |
 | `clips/`, `clips.json` | ASR 입력 음성과 구간 정보 |
 | `metrics.json` | 실행 상태, 처리 시간, 메모리 측정값 |
 

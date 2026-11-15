@@ -63,7 +63,7 @@ class Demo:
         return web.json_response({'ready': all((ROOT/'models'/m/'config.json').exists() for m in
             ['whisper-large-v3-turbo', 'Qwen3-4B-Instruct-2507']),
             'max_minutes': 60, 'max_chunk_bytes': MAX_CHUNK,
-            'processing': {'location': 'server', 'device': self.device, 'asr': self.asr, 'separator': self.separator},
+            'processing': {'location': 'server', 'device': self.device, 'asr': self.asr, 'separator': self.separator, 'order_backend': 'qwen', 'separated_audio': 'full', 'llm': 'Qwen3-4B-Instruct-2507'},
             'stores': list(self.stores.values()),
             'tile_url': os.environ.get('DRIVE_ORDER_TILES', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
             'tile_attribution': os.environ.get('DRIVE_ORDER_TILE_ATTRIBUTION', '© OpenStreetMap contributors')})
@@ -222,6 +222,7 @@ class Demo:
         proc = await asyncio.create_subprocess_exec(sys.executable, '-u', '-m', 'drive_order', 'audio',
             '--input', str(recording), '--menu', str(folder/'menu.json'), '--trip', str(folder/'trip.json'),
             '--device', self.device, '--asr', self.asr, '--separator', self.separator,
+            '--order-backend', 'qwen', '--separated-audio', 'full',
             '--output', str(output), cwd=ROOT, env=env, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT, start_new_session=True, limit=1024*1024)
         phases = {'Streaming diarization': '누가 언제 말했는지 찾고 있습니다',

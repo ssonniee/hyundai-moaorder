@@ -15,9 +15,13 @@ def tokenizer_data(tokenizer):
         text = tokenizer.decode([prefix, token_id])[1:]
         standalone = tokenizer.decode([token_id])
         regular.append((token_id, text, len(text) > len(standalone)))
-    return TokenEnforcerTokenizerData(regular,
+    data = TokenEnforcerTokenizerData(regular,
         lambda ids: tokenizer.decode(ids).rstrip('\ufffd'), tokenizer.eos_token_id,
         False, len(tokenizer))
+    # Byte-level tokenizers can assemble Hangul syllables absent as standalone
+    # vocabulary tokens. Keep those decoded characters valid inside JSON strings.
+    data.tokenizer_alphabet += ''.join(chr(c) for c in range(0xAC00, 0xD7A4))
+    return data
 
 
 def prefix_filter(data, schema):
