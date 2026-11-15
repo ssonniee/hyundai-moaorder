@@ -28,7 +28,6 @@ See how MoaOrder turns multi-speaker conversations into a clear, organized order
 
 [**서명된 release APK 다운로드 →**](https://github.com/ssonniee/hyundai-moaorder/raw/refs/heads/main/apk/MoaOrder_모아오더_release.apk)
 
-Android 기기에서 APK를 내려받아 설치한 뒤, 매장을 선택하고 마이크 권한을 허용해 녹음하거나 음성 파일을 업로드하세요. 녹음을 중지하면 사람별 주문을 확인할 수 있습니다.
 
 | 항목 | 내용 |
 |---|---|
