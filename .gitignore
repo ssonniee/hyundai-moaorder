@@ -19,3 +19,11 @@ ios/build/
 .env
 .env.*
 .venv-separator/
+
+# Android local builds and private signing material
+android/.gradle/
+android/local.properties
+android/**/build/
+*.jks
+*.keystore
+signing.properties

@@ -1,0 +1,40 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'ai.moaorder.app'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'ai.moaorder.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+    signingConfigs {
+        release {
+            if (System.getenv('MOA_KEYSTORE')) {
+                storeFile file(System.getenv('MOA_KEYSTORE'))
+                storePassword System.getenv('MOA_STORE_PASSWORD')
+                keyAlias System.getenv('MOA_KEY_ALIAS') ?: 'moaorder'
+                keyPassword System.getenv('MOA_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+
+// Fail instead of accidentally distributing an unsigned release.
+tasks.register('verifyReleaseSigning') {
+    doLast {
+        ['MOA_KEYSTORE', 'MOA_STORE_PASSWORD', 'MOA_KEY_PASSWORD'].each {
+            if (!System.getenv(it)) throw new GradleException("Required signing setting: " + it)
+        }
+    }
+}
+tasks.configureEach { if (name == 'preReleaseBuild') dependsOn('verifyReleaseSigning') }

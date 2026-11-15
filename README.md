@@ -24,6 +24,27 @@ See how MoaOrder turns multi-speaker conversations into a clear, organized order
 
 ---
 
+## Android 앱
+
+[**서명된 release APK 다운로드 →**](https://github.com/ssonniee/hyundai-moaorder/raw/refs/heads/main/apk/MoaOrder_모아오더_release.apk)
+
+Android 기기에서 APK를 내려받아 설치한 뒤, 매장을 선택하고 마이크 권한을 허용해 녹음하거나 음성 파일을 업로드하세요. 녹음을 중지하면 사람별 주문을 확인할 수 있습니다.
+
+| 항목 | 내용 |
+|---|---|
+| 앱 / 버전 | 모아오더 / 1.0.0 |
+| APK | `apk/MoaOrder_모아오더_release.apk` |
+| 실행 조건 | Android 8.0 이상, 인터넷 연결, 최신 Android System WebView |
+| 분석 방식 | GPU 서버 연결. 모델 가중치는 서버에 보관하며 APK에 포함하지 않습니다. |
+| 서버 | 위 Live Web Demo와 동일. 서버와 공개 연결이 실행 중이어야 합니다. |
+| 확인 환경 | 일반 Android 15(API 35) 에뮬레이터, Pixel 6, 1080 × 2400 |
+| 확인 범위 | release APK 설치·실행, 매장 선택, 마이크 권한, 녹음·서버 저장·일시정지·결과 표시, 음성 파일 선택·업로드 |
+| Pleos Connect | 미사용. 에뮬레이터 버전·화면 규격 해당 없음. SDK 연동 예정 |
+
+실제 Android 기기 및 Pleos 환경에서의 검증은 아직 진행하지 않았습니다. iPhone에서는 Live Web Demo를 이용하세요.
+
+[APK 빌드 방법](docs/ANDROID.md)
+
 ## 실행 Pipeline
 FusedLocation과 NaviHelper의 Android 연동은 추후 진행 예정.
 
