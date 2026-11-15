@@ -6,19 +6,21 @@
 선택한 매장의 메뉴를 참고해 화자별 발화를 기록하고, 메뉴 추가·변경·취소를 반영하여 주문서를 작성합니다.
 목적지를 선택하고 직접 녹음하거나 음성 파일을 올려, 화자별 주문 결과를 확인할 수 있습니다.
 
-## 웹 프로토타입
+## Try MoaOrder
 
-### [모아오더 웹으로 체험해보기](https://udder-purify-retract.ngrok-free.dev/)
+### 🌐 Live Web Demo
 
-서버가 실행 중일 때 **접속키 없이 체험**할 수 있습니다. 공개 데모의 녹음·결과는 기존 운영 데이터와 분리되며, 방문한 브라우저별로 구분됩니다.
-공개 체험은 녹음당 최대 5분, 브라우저당 5개까지 보관할 수 있습니다.
-직접 녹음하려면 브라우저의 마이크 권한을 허용해 주세요.
+Experience MoaOrder directly in your browser.
+
+[**Launch MoaOrder →**](https://udder-purify-retract.ngrok-free.dev/)
 
 ---
 
-## 시연 영상
+## 🎬 Watch MoaOrder in Action
 
-### [모아오더 시연 영상 보러가기](https://youtu.be/Sa-5V4HNdrk)
+See how MoaOrder turns multi-speaker conversations into a clear, organized order.
+
+[**Watch the Demo →**](https://youtu.be/Sa-5V4HNdrk)
 
 ---
 
