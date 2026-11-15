@@ -48,25 +48,6 @@ flowchart LR
   V --> O[화자별 주문 초안과 변경 이력]
 ```
 
+---
 
-
-## 서버에서 실행하기
-
-CUDA를 사용할 수 있는 Linux GPU 서버에서 실행합니다. Python 환경과 모델을 준비한 후 저장소 루트에서 실행하세요.
-
-```bash
-git clone https://github.com/ssonniee/hyundai-moaorder.git
-cd hyundai-moaorder
-# 아래 설치 안내에 따라 Python 환경과 모델을 먼저 준비합니다.
-bash demo.sh
-```
-
-**[설치부터 접속까지](docs/SETUP.md)** — 모델 다운로드, 음원분리 환경, HTTPS 접속 방법을 안내합니다.
-
-터미널에 출력되는 접속 링크로 웹을 열 수 있습니다. 모델 가중치·접속키·녹음 결과는 Git에 포함되지 않습니다.
-
-| 경로 | 내용 |
-|---|---|
-| `drive_order/` | 서버와 음성·주문 처리 |
-| `demo/` | 웹 화면과 매장 메뉴 |
-| `scripts/` | 모델 다운로드와 음원분리 실행 |
+[**Self-hosting Guide →**](docs/SETUP.md)
