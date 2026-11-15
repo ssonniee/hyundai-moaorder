@@ -2,8 +2,6 @@
 
 자신의 GPU 서버에서 MoaOrder를 실행하는 방법입니다. 웹 체험만 원한다면 [공개 데모](https://udder-purify-retract.ngrok-free.dev/)를 이용하세요.
 
-[← 프로젝트 소개](../README.md)
-
 ## 준비 사항
 
 | 항목 | 필요 환경 |
