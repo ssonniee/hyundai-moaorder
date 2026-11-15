@@ -40,7 +40,7 @@ See how MoaOrder turns multi-speaker conversations into a clear, organized order
 | 확인 범위 | release APK 설치·실행, 매장 선택, 마이크 권한, 녹음·서버 저장·일시정지·결과 표시, 음성 파일 선택·업로드 |
 | Pleos Connect | 미사용. 에뮬레이터 버전·화면 규격 해당 없음. SDK 연동 예정 |
 
-실제 Android 기기 및 Pleos 환경에서의 검증은 아직 진행하지 않았습니다. iPhone에서는 Live Web Demo를 이용하세요.
+(iPhone에서는 Live Web Demo를 이용하세요.)
 
 [APK 빌드 방법](docs/ANDROID.md)
 
