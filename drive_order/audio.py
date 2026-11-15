@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -147,12 +148,13 @@ def splice_overlap(mix, source, activity, speaker, full_track=False):
 
 
 def prepare_clips(path, probs, output, model_dir, device='cuda', threshold=.5, max_seconds=20,
-                  separator_kind='sepformer', separator_python='/home/ssonniee/anaconda3/envs/diarizen/bin/python',
+                  separator_kind='sepformer', separator_python=None,
                   sepformer_model='sepformer-wsj02mix', separated_audio='splice'):
     import torch
     from .vendor.conv_tasnet import conv_tasnet_base
     if not 2 <= max_seconds <= 30:
         raise ValueError('max_seconds must be in [2, 30]')
+    separator_python = separator_python or os.environ.get('DRIVE_ORDER_SEPARATOR_PYTHON', sys.executable)
     if separated_audio not in {'splice', 'full'}:
         raise ValueError('Invalid separated_audio mode')
     active = probs >= threshold

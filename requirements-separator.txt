@@ -1,0 +1,6 @@
+# Separate environment for SpeechBrain; install a compatible torch/torchaudio pair first.
+speechbrain==1.1.0
+numpy>=1.26
+scipy
+soundfile
+huggingface_hub

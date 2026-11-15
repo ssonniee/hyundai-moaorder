@@ -218,7 +218,7 @@ class Demo:
     async def run_pipeline(self, state, recording, output):
         folder = self.data/state['id']
         env = dict(os.environ)
-        env['PYTHONPATH'] = os.pathsep.join([str(ROOT/'.deps'), str(ROOT.parent/'Nemotron-ASR/Speech'), str(ROOT)])
+        env['PYTHONPATH'] = os.pathsep.join(filter(None, [str(ROOT), env.get('PYTHONPATH', '')]))
         proc = await asyncio.create_subprocess_exec(sys.executable, '-u', '-m', 'drive_order', 'audio',
             '--input', str(recording), '--menu', str(folder/'menu.json'), '--trip', str(folder/'trip.json'),
             '--device', self.device, '--asr', self.asr, '--separator', self.separator,

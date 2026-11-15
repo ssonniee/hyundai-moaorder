@@ -1,87 +1,74 @@
-# 로컬 실행 안내
+# 서버 설치 및 실행
 
-[프로젝트 소개](../README.md) · [웹 사용 안내](../demo/README.md)
+CUDA 사용이 가능한 Linux GPU 서버와 Python 3.11 환경을 기준으로 합니다. 개발 시 RTX 5090 32GB를 사용했습니다. 다른 GPU에서의 최소 메모리는 검증하지 않았습니다. 모델을 처음 받을 때 인터넷과 충분한 디스크 공간이 필요합니다.
 
-기본 주문 해석은 Qwen3-4B 문맥 검증 + 매장별 별칭·오타 보조 방식입니다. 웹과 CLI 모두 이 구성을 사용합니다.
+모든 명령은 저장소 루트에서 터미널에 입력합니다. CUDA 드라이버와 호환되는 PyTorch를 먼저 준비하세요.
 
-## 1. 환경 준비
-
-저장소를 내려받고 루트 폴더에서 작업합니다.
+## 1. 기본 Python 환경
 
 ```bash
-git clone https://github.com/ssonniee/hyundai-moaorder.git
-cd hyundai-moaorder
-```
-
-| 구성 | 준비 사항 |
-|---|---|
-| 기본 Python 환경 | CUDA를 사용할 수 있는 PyTorch와 [requirements.txt](../requirements.txt)의 패키지 |
-| 음원분리 Python 환경 | 호환되는 PyTorch·Torchaudio·SpeechBrain |
-| 시스템 도구 | ffmpeg |
-| 모델 저장 공간 | 다운로드한 가중치를 둘 로컬 디스크 |
-
-검증 환경의 패키지 버전은 [environment.txt](../environment.txt), [environment-separator.txt](../environment-separator.txt)에 기록되어 있습니다. 두 환경은 NeMo와 SpeechBrain 의존성을 분리하기 위한 구성입니다.
-
-`demo.sh`와 `run.sh`는 개발 서버의 Python 경로를 기본값으로 사용합니다. 사용할 환경을 활성화한 뒤 지정합니다.
-
-```bash
-export DRIVE_ORDER_PYTHON="$(command -v python)"
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python scripts/download_models.py
 ```
 
-다운로드 스크립트는 Qwen3-4B, Nemotron 화자분리, Whisper 가중치를 준비합니다. SepFormer는 분리용 환경에서 처음 실행할 때 다운로드합니다. 모델은 `models/` 또는 Hugging Face 캐시에 저장되며 Git에 포함되지 않습니다.
-
-## 2. 음성 파일 분석
-
-입력 음성과 매장 메뉴를 준비합니다. 아래 음성 경로와 분리용 Python 경로는 자신의 환경에 맞게 바꿉니다.
+모델 다운로드는 Qwen3-4B, Whisper, Nemotron 화자분리를 준비합니다. 다운로드 오류가 발생하면 정상 완료한 뒤 서버를 시작하세요. 기본 환경에서 GPU를 확인합니다.
 
 ```bash
-bash run.sh audio \
-  --input /path/to/recording.wav \
-  --menu examples/menu.json \
-  --separator-python /path/to/separator-env/bin/python \
-  --output results/my_first_order
+python -c "import torch; print(torch.cuda.is_available())"
 ```
 
-웹 서버도 같은 파이프라인을 실행합니다. 이 기준 구현의 웹 서버에는 분리용 Python 경로를 받는 별도 옵션이 없으므로, 다른 PC에서는 [CLI 설정](../drive_order/__main__.py)의 `--separator-python` 기본값을 준비한 환경에 맞춰야 합니다.
+`True`가 나와야 기본 CUDA 실행이 가능합니다. 음성 변환은 시스템 ffmpeg를 사용하며, 없으면 설치된 imageio-ffmpeg를 사용합니다.
+
+## 2. 음원분리 환경
+
+NeMo와 SpeechBrain의 의존성을 분리합니다. 아래 PyTorch 조합은 개발 서버에서 사용한 CUDA 12.8 조합이며, 서버 드라이버가 이를 지원해야 합니다.
 
 ```bash
+python3.11 -m venv .venv-separator
+.venv-separator/bin/python -m pip install --upgrade pip
+.venv-separator/bin/python -m pip install torch==2.7.0 torchaudio==2.7.0 --index-url https://download.pytorch.org/whl/cu128
+.venv-separator/bin/python -m pip install -r requirements-separator.txt
+export DRIVE_ORDER_SEPARATOR_PYTHON="$PWD/.venv-separator/bin/python"
+```
+
+SepFormer 가중치는 첫 음원분리 실행 때 다운로드됩니다. 새 터미널에서는 기본 환경 활성화와 위 환경변수 설정을 다시 해주세요.
+
+## 3. 웹 서버 시작
+
+```bash
+source .venv/bin/activate
+export DRIVE_ORDER_SEPARATOR_PYTHON="$PWD/.venv-separator/bin/python"
 bash demo.sh
 ```
 
-기본 ASR은 Whisper입니다. 음원분리 구간은 `--separated-audio full`이 기본이며, `splice`로 겹친 부분만 교체할 수도 있습니다. 주문 해석은 `--order-backend qwen`이 기본이고, `llm`은 기존 LocalLLM 경로입니다. 선택 옵션 `--asr nemo`는 추가 NVIDIA ASR 모델과 호환 NeMo 환경이 필요합니다. `run.sh`는 인접한 `Nemotron-ASR/Speech` 경로가 있으면 함께 참조합니다.
+서버 PC의 브라우저에서 터미널에 출력되는 `http://127.0.0.1:8765/#key=...` 링크를 엽니다. 다른 Python 환경을 쓰려면 `DRIVE_ORDER_PYTHON`에 실행 파일 경로를 지정합니다.
 
-## 3. 텍스트로 주문 해석만 확인
-
-음성 인식을 반복하지 않고 주문 추가·변경·취소 로직을 확인합니다.
+다른 기기에서 접속하려면 HTTPS 역방향 프록시 또는 터널을 8765 포트에 연결합니다. 할당받은 호스트를 서버에 허용하세요.
 
 ```bash
-bash run.sh replay \
-  --input examples/order_changes.jsonl \
-  --menu examples/menu.json \
-  --output results/my_order_replay
+bash demo.sh --public-host YOUR_HTTPS_HOST
 ```
 
-출력 경로는 매번 새 폴더를 사용합니다. 발화 입력은 시간순 JSONL이며, 서로 다른 녹음의 같은 화자 번호가 동일 인물을 뜻하지는 않습니다.
+`YOUR_HTTPS_HOST`에는 `https://`나 경로 없이 실제 도메인을 넣습니다. HTTPS 주소 뒤에 서버가 출력한 `#key=...`를 붙여 접속합니다. 휴대폰의 localhost는 서버 PC가 아니며, 마이크 권한에는 HTTPS가 필요합니다. 터널·프록시는 별도로 구성해야 합니다.
 
-## 4. 결과 파일
+## 4. 메뉴와 실행 확인
 
-| 파일 | 내용 |
-|---|---|
-| `utterances.jsonl` | 화자, 시작·종료 시간, 인식된 발화 |
-| `orders.json` | 화자별 최신 주문 초안 |
-| `order_events.jsonl` | 변경 근거와 적용 전·후 주문 |
-| `menu_postprocessing.jsonl` | 원문, 매장별 별칭·오타 후보와 판단 기록 |
-| `clips/`, `clips.json` | ASR 입력 음성과 구간 정보 |
-| `metrics.json` | 실행 상태, 처리 시간, 메모리 측정값 |
+매장 목록은 `demo/stores.json`에 있습니다. 각 메뉴의 `aliases`에 매장별 별칭을 추가할 수 있습니다. 서버를 재시작하면 목록을 다시 읽습니다.
 
-목적지 입력은 `--trip examples/trip.json`으로 추가할 수 있습니다. 목적지와 메뉴의 매장 ID가 일치해야 합니다. 생성된 길 안내 요청 데이터는 SDK 호출 결과가 아닙니다.
-
-## 5. 기능 검증
+텍스트만으로 주문 해석을 확인할 수 있습니다.
 
 ```bash
+bash run.sh replay --input examples/order_changes.jsonl --menu examples/menu.json --output results/text_test
 python -m unittest discover -s tests
 ```
 
-정확도 검증은 [VALIDATION.md](../VALIDATION.md)를 참고합니다. 그 문서의 `results/` 경로는 과거 로컬 실행 결과이며 새로 복제한 저장소에는 포함되지 않습니다.
+결과 폴더는 매번 새 이름을 사용합니다. 기본은 Qwen 문맥 검증 + 별칭·오타 후보 보조이며, 녹음 원문을 덮어쓰지 않습니다.
+
+## 저장되는 결과
+
+웹 녹음과 결과는 `demo/sessions/`, CLI 결과는 지정한 출력 폴더에 저장됩니다. `orders.json`은 최종 주문, `order_events.jsonl`은 변경 이력, `menu_postprocessing.jsonl`은 원문·메뉴 후보·판단 기록입니다. 접속키와 이 폴더들은 Git에 올리지 마세요.
+
+분석 결과는 주문 초안입니다. 없는 메뉴 대체, 모호한 취소, ASR 오류가 남을 수 있으므로 사용자가 최종 주문을 확인해야 합니다.

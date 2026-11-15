@@ -46,17 +46,25 @@ flowchart LR
 
 
 
-## 개발자 안내
+## 서버에서 실행하기
 
-[로컬 실행과 모델 준비](docs/SETUP.md)에서 환경을 구성한 뒤 실행할 수 있습니다. 모델 가중치와 녹음 결과는 저장소에 포함되지 않습니다.
+CUDA를 사용할 수 있는 Linux GPU 서버에서 실행합니다. Python 환경과 모델을 준비한 후 저장소 루트에서 실행하세요.
+
+```bash
+git clone https://github.com/ssonniee/hyundai-moaorder.git
+cd hyundai-moaorder
+# 아래 설치 안내에 따라 Python 환경과 모델을 먼저 준비합니다.
+bash demo.sh
+```
+
+**[설치부터 접속까지](docs/SETUP.md)** — 모델 다운로드, 음원분리 환경, HTTPS 접속 방법을 안내합니다.
+
+터미널에 출력되는 접속 링크로 웹을 열 수 있습니다. 모델 가중치·접속키·녹음 결과는 Git에 포함되지 않습니다.
 
 | 경로 | 내용 |
 |---|---|
-| [drive_order/](drive_order/) | 음성 처리와 주문 정리 파이프라인 |
-| [demo/](demo/) | 웹 화면, 서버 운영 안내, 매장 메뉴 |
-| [examples/](examples/) | 메뉴·목적지·대화 입력 예시 |
-| [scripts/](scripts/) · [tests/](tests/) | 모델 준비, 평가, 기능 검증 |
-| [VALIDATION.md](VALIDATION.md) | 기준 구현의 검증 기록과 한계 |
-| [ios/](ios/) · [android-contract/](android-contract/) | 앱 소스와 차량 SDK 연동 설계 |
-
-실행 성공과 주문 정확도는 구분해 확인합니다. 실제 차량 소음, 장시간 자연 대화, 세 명 이상 동시 발화에 대한 검증은 추가로 필요합니다.
+| `drive_order/` | 서버와 음성·주문 처리 |
+| `demo/` | 웹 화면과 매장 메뉴 |
+| `scripts/` | 모델 다운로드와 음원분리 실행 |
+| `examples/` | 메뉴와 텍스트 입력 예제 |
+| `tests/` | 실행에 필요한 핵심 기능 검사 |

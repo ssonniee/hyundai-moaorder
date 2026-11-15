@@ -15,3 +15,7 @@ demo/server.pid
 demo/tls/
 ios/**/xcuserdata/
 ios/build/
+
+.env
+.env.*
+.venv-separator/

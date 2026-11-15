@@ -1,4 +1,6 @@
 import argparse
+import os
+import sys
 import json
 import time
 from pathlib import Path
@@ -27,7 +29,7 @@ def main():
             p.add_argument('--threshold', type=float, default=.5)
             p.add_argument('--max-seconds', type=float, default=20)
             p.add_argument('--separator', choices=['sepformer', 'convtasnet', 'none'], default='sepformer')
-            p.add_argument('--separator-python', default='/home/ssonniee/anaconda3/envs/diarizen/bin/python')
+            p.add_argument('--separator-python', default=os.environ.get('DRIVE_ORDER_SEPARATOR_PYTHON', sys.executable))
             p.add_argument('--sepformer-model', choices=['sepformer-wsj02mix', 'sepformer-whamr'], default='sepformer-wsj02mix')
             p.add_argument('--asr', choices=['nemo', 'whisper'], default='whisper')
             p.add_argument('--skip-orders', action='store_true', help='Audio stages only; no order claims')

@@ -1,4 +1,4 @@
-# Use the existing nemo environment first. Exact tested versions are in environment.txt.
+# Main server environment; install CUDA-compatible PyTorch for your GPU.
 torch>=2.6
 transformers>=5.19
 nemo_toolkit[asr]>=3.0
