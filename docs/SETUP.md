@@ -1,17 +1,11 @@
 # 직접 설치하고 실행하기
 
-**필요 환경:** Linux, NVIDIA GPU·CUDA 호환 드라이버, Python 3.11, Git, 인터넷 연결.
-
-아래 명령을 서버 터미널에 순서대로 입력합니다.
-
 ## 1. 코드 다운로드
 
 ```bash
 git clone https://github.com/ssonniee/hyundai-moaorder.git
 cd hyundai-moaorder
 ```
-
-이후 명령은 이 폴더에서 실행합니다.
 
 ## 2. 실행 환경 설치
 
