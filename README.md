@@ -50,4 +50,4 @@ flowchart LR
 
 ---
 
-[**Self-hosting Guide →**](docs/SETUP.md)
+[**로컬에서 실행하는 방법**](docs/SETUP.md)
