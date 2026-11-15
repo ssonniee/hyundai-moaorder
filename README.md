@@ -16,8 +16,6 @@
 
 ## 시연 영상
 
-[![모아오더 시연 영상 — 클릭하여 YouTube에서 보기](https://img.youtube.com/vi/Sa-5V4HNdrk/hqdefault.jpg)](https://youtu.be/Sa-5V4HNdrk)
-
 ### [모아오더 시연 영상 보러가기](https://youtu.be/Sa-5V4HNdrk)
 
 ---
